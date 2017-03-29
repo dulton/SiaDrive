@@ -1,0 +1,26 @@
+#see manual for more info
+
+#background = on
+#input = 
+#logfile = log.txt
+noparent = on
+#noclobber = on
+continue = on
+recursive = on
+#adjustextension = on
+verbose = on
+pagerequisites = on
+#quota = inf
+tries = 3
+reclevel = inf
+passiveftp = on
+contentdisposition = on
+#waitretry = 
+restrictfilenames = windows
+timestamping = on
+#wait = 
+dirstruct = off
+#followftp = 
+#limitrate = 4k
+#dirprefix = 
+#http_proxy = http://127.0.0.1:8118

@@ -1,0 +1,11 @@
+BUILD INSTRUCTIONS
+------------------
+1. Install Visual Studio 2015 Community or above
+2. For Debug, execute 'build_debug_x64.cmd'
+3. For Release, execute 'build_release_x64.cmd'
+4. After building, you will find the entire release in 'dist\Debug' or 'dist\Release'
+
+NOTE: CEF takes several hours to build. This only happens once per release type (Debug/Release).
+
+Report any build issues and/or bugs to:
+https://github.com/SiaExtensions/SiaDrive

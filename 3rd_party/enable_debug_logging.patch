@@ -1,0 +1,175 @@
+From 038b4c72b6a6b1a1f992ffd57ec9207aecd162af Mon Sep 17 00:00:00 2001
+From: "SiaExtensions" <sia.extensions@gmail.com>
+Date: Fri, 24 Mar 2017 18:44:48 -0500
+Subject: [PATCH] Enable debug logging
+
+---
+ dokan/dokan.c                 | 11 +++++++++++
+ dokan/dokan.h                 |  2 ++
+ dokan/dokanc.h                | 17 +++++++++++++++++
+ samples/dokan_mirror/mirror.c | 16 ++++++++++++++++
+ 4 files changed, 46 insertions(+)
+
+diff --git a/dokan/dokan.c b/dokan/dokan.c
+index 376c8e0..2e92feb 100644
+--- a/dokan/dokan.c
++++ b/dokan/dokan.c
+@@ -37,6 +37,9 @@ BOOL g_DebugMode = TRUE;
+ // DokanOptions->UseStdErr is ON?
+ BOOL g_UseStdErr = FALSE;
+ 
++// DokanOptions->UseDebugLogFile is ON?
++BOOL g_UseDebugLogFile = FALSE;
++
+ CRITICAL_SECTION g_InstanceCriticalSection;
+ LIST_ENTRY g_InstanceList;
+ 
+@@ -44,6 +47,8 @@ VOID DOKANAPI DokanUseStdErr(BOOL Status) { g_UseStdErr = Status; }
+ 
+ VOID DOKANAPI DokanDebugMode(BOOL Status) { g_DebugMode = Status; }
+ 
++VOID DOKANAPI DokanUseDebugLogFile(BOOL Status) { g_UseDebugLogFile = Status; }
++
+ PDOKAN_INSTANCE
+ NewDokanInstance() {
+   PDOKAN_INSTANCE instance = (PDOKAN_INSTANCE)malloc(sizeof(DOKAN_INSTANCE));
+@@ -178,6 +183,7 @@ int DOKANAPI DokanMain(PDOKAN_OPTIONS DokanOptions,
+ 
+   g_DebugMode = DokanOptions->Options & DOKAN_OPTION_DEBUG;
+   g_UseStdErr = DokanOptions->Options & DOKAN_OPTION_STDERR;
++  g_UseDebugLogFile = DokanOptions->Options & DOKAN_OPTION_DEBUG_LOG_FILE;
+ 
+   if (g_DebugMode) {
+     DbgPrintW(L"Dokan: debug mode on\n");
+@@ -188,6 +194,11 @@ int DOKANAPI DokanMain(PDOKAN_OPTIONS DokanOptions,
+     g_DebugMode = TRUE;
+   }
+ 
++  if (g_UseDebugLogFile) {
++    DbgPrintW(L"Dokan: use debug log file\n");
++    g_DebugMode = TRUE;
++  }
++
+   if (DokanOptions->Options & DOKAN_OPTION_NETWORK &&
+       !IsMountPointDriveLetter(DokanOptions->MountPoint)) {
+     DokanOptions->Options &= ~DOKAN_OPTION_NETWORK;
+diff --git a/dokan/dokan.h b/dokan/dokan.h
+index 7e9eaa8..4c58d51 100644
+--- a/dokan/dokan.h
++++ b/dokan/dokan.h
+@@ -92,6 +92,8 @@ extern "C" {
+ #define DOKAN_OPTION_CURRENT_SESSION 128
+ /** Enable Lockfile/Unlockfile operations. Otherwise Dokan will take care of it */
+ #define DOKAN_OPTION_FILELOCK_USER_MODE 256
++/** Enable debug logging to file*/
++#define DOKAN_OPTION_DEBUG_LOG_FILE 512
+ 
+ /** @} */
+ 
+diff --git a/dokan/dokanc.h b/dokan/dokanc.h
+index 7fd288f..a0865f7 100644
+--- a/dokan/dokanc.h
++++ b/dokan/dokanc.h
+@@ -52,6 +52,9 @@ extern BOOL g_DebugMode;
+ // DokanOptions->UseStdErr is ON?
+ extern BOOL g_UseStdErr;
+ 
++// DokanOptions->UseDebugLogFile is ON?
++extern BOOL g_UseDebugLogFile;
++
+ #ifdef _MSC_VER
+ 
+ static VOID DokanDbgPrint(LPCSTR format, ...) {
+@@ -73,6 +76,13 @@ static VOID DokanDbgPrint(LPCSTR format, ...) {
+     fputs(outputString, stderr);
+   else
+     OutputDebugStringA(outputString);
++  if (g_UseDebugLogFile) {
++    FILE* logFile;
++    if (fopen_s(&logFile, "DokanyDebugA.log", "a") == 0) {
++      fprintf_s(logFile, outputString);
++      fclose(logFile);
++    }
++  }
+   if (buffer)
+     _freea(buffer);
+   va_end(argp);
+@@ -99,6 +109,13 @@ static VOID DokanDbgPrintW(LPCWSTR format, ...) {
+     fputws(outputString, stderr);
+   else
+     OutputDebugStringW(outputString);
++  if (g_UseDebugLogFile) {
++    FILE* logFile;
++    if (_wfopen_s(&logFile, L"DokanyDebugW.log", L"a") == 0) {
++      fwprintf_s(logFile, outputString);
++      fclose(logFile);
++    }
++  }
+   if (buffer)
+     _freea(buffer);
+   va_end(argp);
+diff --git a/samples/dokan_mirror/mirror.c b/samples/dokan_mirror/mirror.c
+index c077186..1defa23 100644
+--- a/samples/dokan_mirror/mirror.c
++++ b/samples/dokan_mirror/mirror.c
+@@ -43,6 +43,7 @@ THE SOFTWARE.
+ BOOL g_UseStdErr;
+ BOOL g_DebugMode;
+ BOOL g_HasSeSecurityPrivilege;
++BOOL g_UseDebugLogFile;
+ 
+ static void DbgPrint(LPCWSTR format, ...) {
+   if (g_DebugMode) {
+@@ -64,6 +65,13 @@ static void DbgPrint(LPCWSTR format, ...) {
+       fputws(outputString, stderr);
+     else
+       OutputDebugStringW(outputString);
++    if (g_UseDebugLogFile) {
++      FILE* logFile;
++      if (_wfopen_s(&logFile, L"DokanyMirror.log", L"a") == 0) {
++        fwprintf_s(logFile, outputString);
++        fclose(logFile);
++      }
++    }
+     if (buffer)
+       _freea(buffer);
+     va_end(argp);
+@@ -1331,6 +1339,7 @@ void ShowUsage() {
+     "  /l MountPoint (ex. /l m)\t\t\t Mount point. Can be M:\\ (drive letter) or empty NTFS folder C:\\mount\\dokan .\n"
+     "  /t ThreadCount (ex. /t 5)\t\t\t Number of threads to be used internally by Dokan library.\n\t\t\t\t\t\t More threads will handle more event at the same time.\n"
+     "  /d (enable debug output)\t\t\t Enable debug output to an attached debugger.\n"
++    "  /b (enable debug log)\t\t\t Enable debug output to log file.\n"
+     "  /s (use stderr for output)\t\t\t Enable debug output to stderr.\n"
+     "  /n (use network drive)\t\t\t Show device as network device.\n"
+     "  /m (use removable drive)\t\t\t Show device as removable media.\n"
+@@ -1373,6 +1382,7 @@ int __cdecl wmain(ULONG argc, PWCHAR argv[]) {
+ 
+   g_DebugMode = FALSE;
+   g_UseStdErr = FALSE;
++  g_UseDebugLogFile = FALSE;
+ 
+   ZeroMemory(dokanOptions, sizeof(DOKAN_OPTIONS));
+   dokanOptions->Version = DOKAN_VERSION;
+@@ -1401,6 +1411,9 @@ int __cdecl wmain(ULONG argc, PWCHAR argv[]) {
+     case L's':
+       g_UseStdErr = TRUE;
+       break;
++    case L'b':
++      g_UseDebugLogFile = TRUE;
++      break;
+     case L'n':
+       dokanOptions->Options |= DOKAN_OPTION_NETWORK;
+       break;
+@@ -1498,6 +1511,9 @@ int __cdecl wmain(ULONG argc, PWCHAR argv[]) {
+   if (g_UseStdErr) {
+     dokanOptions->Options |= DOKAN_OPTION_STDERR;
+   }
++  if (g_UseDebugLogFile) {
++    dokanOptions->Options |= DOKAN_OPTION_DEBUG_LOG_FILE;
++  }
+ 
+   dokanOptions->Options |= DOKAN_OPTION_ALT_STREAM;
+ 
+-- 
+2.10.1.windows.1
+

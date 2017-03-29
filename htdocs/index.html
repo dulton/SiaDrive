@@ -1,0 +1,176 @@
+<html>
+  <head>
+    <title>SiaDrive</title>
+    <link rel="stylesheet" type="text/css" href="css/cryptocoins.css">
+    <link rel="stylesheet" type="text/css" href="css/cryptocoins-colors.css">
+    <link rel="stylesheet" type="text/css" href="css/general.css">
+    <link rel="stylesheet" type="text/css" href="css/sidenav.css">
+    <link rel="stylesheet" type="text/css" href="css/tab_page.css">
+    <script src="js/index.js"></script>
+  </head>
+  <body>
+    <div class="padded" style="padding-bottom: 0;">
+      <h1 style="font-size: 24px;padding-bottom: 0;" id="ID_SiaDrive"></h1>
+    </div>
+    <div class="padded" id="main_window" style="padding-top: 0;"></div>
+    <div class="hidden-element" id="app_window">
+      <div class="box" id="general_info">
+        <h1>Sia Information</h1>
+        <div style="float: right;">
+          <table>
+            <tr>
+              <td style="text-align: right">Server Version:</td>
+              <td id="ID_ServerVersion"></td>
+            </tr>
+          </table>
+        </div>
+        <div>
+          <table>
+            <tr>
+              <td style="text-align: right">Available:</td>
+              <td id="ID_WalletConfirmedBalance" class="amount"></td>
+            </tr>
+            <tr>
+              <td style="text-align: right">Pending:</td>
+              <td id="ID_WalletBalanceUnconfirmed" class="amount"></td>
+            </tr>
+            <tr>
+              <td style="text-align: right">Total:</td>
+              <td id="ID_WalletTotalBalance" class="amount"></td>
+            </tr>
+          </table>
+        </div>
+      </div>
+      <div class="box" id="receive_info">
+        <h1>Receive Address</h1>
+        <label id="ID_WalletReceiveAddress" style="text-align: center; width: inherit;display: block;">...</label>
+      </div>
+      <div class="box" id="renter_info">
+        <h1>Renter Settings <a href="javascript:void(0)" id="ID_Renter_Edit">edit</a></h1>
+        <table width="inherit" style="margin: 0 auto">
+          <tr>
+            <td style="text-align: right">Total Funding:</td>
+            <td id="ID_Renter_AllocatedFunds" style="min-width:120px; word-wrap: break-word;"></td>
+            <td colspan="50%"></td>
+            <td style="text-align: right">Used Funding:</td>
+            <td id="ID_Renter_UsedFunds" style="min-width:120px; word-wrap: break-word;"></td>
+          </tr>
+          <tr>
+            <td style="text-align: right">Available Funding:</td>
+            <td id="ID_Renter_AvailableFunds"></td>
+            <td colspan="50%"></td>
+            <td style="text-align: right">Host Count:</td>
+            <td id="ID_Renter_HostCount"></td>
+          </tr>
+          <tr>
+            <td colspan="100%">
+              <hr />
+            </td>
+          </tr>
+          <tr>
+            <td style="text-align: right">Total GB:</td>
+            <td id="ID_Renter_EstimatedSpace"></td>
+            <td colspan="50%"></td>
+            <td style="text-align: right">Price (per GB):</td>
+            <td id="ID_Renter_EstimatedCost"></td>
+          </tr>
+          <tr>
+            <td style="text-align: right">Available GB:</td>
+            <td id="ID_Renter_AvailablSpace"></td>
+            <td colspan="50%"></td>
+            <td style="text-align: right">Download (per GB):</td>
+            <td id="ID_Renter_EstimatedDownloadCost"></td>
+          </tr>
+          <tr>
+            <td style="text-align: right">Used GB:</td>
+            <td id="ID_Renter_UsedSpace"></td>
+            <td colspan="50%"></td>
+            <td style="text-align: right">Upload (per GB):</td>
+            <td id="ID_Renter_EstimatedUploadCost"></td>
+          </tr>
+        </table>
+        <div class="tooltip" id="ID_Progress" style="display: none;">
+          <progress style="width: 100%; margin: 0; padding: 0;" id="ID_UploadProgress" value="100" max="100">
+          </progress>
+          <span class="tooltiptext" id="ID_UploadProgressTooltip"></span>
+        </div>
+      </div>
+      <div class="box" id="mount_info">
+        <h1>Mount Location</h1>
+        <p>Choose an available drive letter and click 'Mount'</p>
+        <table>
+          <tr>
+            <td style="text-align: left; vertical-align: top">
+              <select id="ID_MountDrives"></select>&nbsp;
+              <button id="ID_MountButton" type="button">Mount</button>
+            </td>
+          </tr>
+        </table>
+      </div>
+      <div class="footer">
+        <table style="width: 100%">
+          <tr>
+            <td style="text-align: left;white-space: nowrap;"><b>Height:</b></td>
+            <td style="white-space: nowrap;" id="ID_BlockHeight">...</td>
+            <td style="text-align: right; vertical-align: bottom;width: 100%;">
+              <button type="button" style="width: 110px;" id="ID_ExitButton">Exit</button>
+            </td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    <div class="hidden-element" id="unlock_window">
+      <div class="box">
+        <h1>Enter Password</h1>
+        <p>Enter wallet password and click 'Unlock' to continue.</p>
+        <input type="password" id="ID_WalletUnlockPwd" style="width: 100%"/><br/><br/>
+        <button id="ID_UnlockWalletButton">Unlock</button>
+      </div>
+    </div>
+    <div class="hidden-element" id="wallet_created_window">
+      <div class="box">
+        <h1>Wallet Seed</h1>
+        <p>Please backup your generated wallet seed in a safe place. The seed is required to unlock your wallet and you will loose everything if this is lost. Click 'OK' when you are ready.</p>
+        <textarea style="width: 100%"; rows="3" id="ID_WalletSeed"></textarea>
+        <button id="ID_WalletCreatedButton">OK</button>
+      </div>
+    </div>
+    <div class="hidden-element" id="unlocking_window">
+      <div class="box">
+        <h1>Please Wait</h1>
+        <p>SiaDrive will refresh once unlocking is complete. This may take several minutes, so please be patient.</p>
+      </div>
+    </div>
+    <div class="hidden-element" id="create_window">
+      <div class="box">
+        <h1>Create New Wallet</h1>
+        <p>Click 'Create' to create a new Sia wallet or exit the application if this is not what you want to do.</p>
+        <button id="ID_CreateWalletButton">Create</button>
+      </div>
+    </div>
+    <div class="hidden-element" id="offline_window">
+      <div class="box">
+        <h1>Offline</h1>
+        <p>Waiting to establish connection to Sia...</p>
+      </div>
+    </div>
+    <div class="hidden-element" id="renter_settings_window">
+      <div class="box" id="renter_settings">
+        <h1>Buy storage on the Sia Decentralized Network</h1>
+        <p>You need to allocate funds to upload and download on Sia. Your allowance remains locked for 3 months. Unspent funds are then refunded*. You can increase your allowance at any time.</p>
+        <p>Your storage allowance automatically refills every 6 weeks. Your computer must be online with your wallet unlocked to complete the refill. If Sia fails to refill the allowance by the end of the lock-in period, your data may be lost.</p>
+        <p class="footnote">*contract fees are non-refundable. They will be subtracted from the allowance that you set.</p>
+        <h2>Allocated Funds</h2>
+        <input type="number" id="ID_RenterSetFunds"><br><br>
+        <h2>Number of Hosts</h2>
+        <input type="number" id="ID_RenterSetHosts"><br><br>
+        <h2>Contract Period</h2>
+        <input type="number" id="ID_RenterSetPeriod"><br><br>
+        <h2>Renew Window</h2>
+        <input type="number" id="ID_RenterSetRenewWindow"><br><br>
+        <button id="ID_RenterSettingsOK" type="button">Save</button>
+        <button id="ID_RenterSettingsCancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </body>
+</html>

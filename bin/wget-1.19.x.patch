@@ -1,0 +1,68 @@
+--- lib/timegm.c	Sat Feb 04 21:41:52 2017
++++ lib/timegm.c	Mon Feb 06 21:32:44 2017
+@@ -21,7 +21,7 @@
+ #endif
+ 
+ #include <time.h>
+-
++#ifndef __MINGW64_VERSION_MAJOR
+ #ifdef _LIBC
+ typedef time_t mktime_offset_t;
+ #else
+@@ -38,3 +38,4 @@
+   tmp->tm_isdst = 0;
+   return __mktime_internal (tmp, __gmtime_r, &gmtime_offset);
+ }
++#endif
+\ No newline at end of file
+--- src/main.c	Sat Feb 11 17:45:22 2017
++++ src/main.c	Tue Feb 07 07:45:56 2017
+@@ -138,9 +138,31 @@
+ }
+ #endif /* defined(SIGHUP) || defined(SIGUSR1) */
+ 
++#ifdef WINDOWS
++#ifdef LOCALEDIR
++#undef LOCALEDIR
++#endif
++#include <shlobj.h>
++char *LOCALEDIR;
++char locPath[MAX_PATH];
++char rcPath[MAX_PATH];
++char szDrive[_MAX_DRIVE];
++char szDir[_MAX_DIR];
++char szFName[_MAX_FNAME];
++char szExt[_MAX_EXT];
++#endif
++
+ static void
+ i18n_initialize (void)
+ {
++#ifdef WINDOWS
++	if (GetModuleFileNameA (NULL, locPath, MAX_PATH))
++	{
++		_splitpath (locPath, szDrive, szDir, szFName, szExt);
++		_makepath (locPath, szDrive, szDir, "locale", NULL);
++		LOCALEDIR = xstrdup (locPath);
++	}
++#endif
+   /* ENABLE_NLS implies existence of functions invoked here.  */
+ #ifdef ENABLE_NLS
+   /* Set the current locale.  */
+--- src/openssl.c	Sat Jul 02 23:54:47 2016
++++ src/openssl.c	Tue Feb 07 07:07:03 2017
+@@ -270,7 +270,13 @@
+    */
+   if (opt.secure_protocol == secure_protocol_pfs)
+     SSL_CTX_set_cipher_list (ssl_ctx, "HIGH:MEDIUM:!RC4:!SRP:!PSK:!RSA:!aNULL@STRENGTH");
+-
++#ifdef WINDOWS
++    if (!opt.ca_cert)
++      if (!opt.ca_directory) {
++        opt.ca_cert = xstrdup ("curl-ca-bundle.crt");
++        opt.ca_directory = ws_mypath();
++      }
++#endif
+   SSL_CTX_set_default_verify_paths (ssl_ctx);
+   SSL_CTX_load_verify_locations (ssl_ctx, opt.ca_cert, opt.ca_directory);
+ 

@@ -1,0 +1,18 @@
+.tab_page_button {
+    text-transform: capitalize;
+}
+
+.tab_page_title {
+    color: var(--h1-color);
+    font-size: var(--app-header-font-size);
+}
+
+.tab_page_tab_content {
+    padding-left: 35px;
+    padding-right: 35px;
+}
+
+.tab_page_list {
+    padding-left: 35px;
+    padding-right: 35px;
+}

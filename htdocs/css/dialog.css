@@ -1,0 +1,58 @@
+:root {
+    --dialog-content-max-opacity: 0.9;
+}
+
+/* The Modal (background) */
+.dialog_modal {
+    margin: 0;
+    padding: 0;
+    display: none; /* Hidden by default */
+    position: fixed; /* Stay in place */
+    z-index: 100; /* Sit on top */
+    height: 100%;
+    width: 100%; /* Full width */
+    overflow: auto; /* Enable scroll if needed */
+    background-color: rgb(0, 0, 0); /* Fallback color */
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+.dialog_title {
+    padding-top: 8px;
+    padding-bottom: 16px;
+    font-size: var(--h1-font-size);
+    color: var(--h1-color);
+}
+
+/* Modal Content */
+.dialog_modal_content {
+    background-color: rgba(0, 0, 0, 0.7);
+    opacity: var(--dialog-content-max-opacity);
+    margin: auto;
+    padding-top: 0;
+    padding-right: 15px;
+    padding-bottom: 30px;
+    padding-left: 15px;
+    border: 1px solid #112311;
+}
+
+.valign {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-50%);
+}
+
+/* The Close Button */
+.dialog_close {
+    color: #919191;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+}
+
+.dialog_close:hover,
+.dialog_close:focus {
+    color: #69867a;
+    text-decoration: none;
+    cursor: pointer;
+}
