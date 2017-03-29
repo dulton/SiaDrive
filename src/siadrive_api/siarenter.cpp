@@ -79,14 +79,11 @@ void CSiaApi::_CSiaRenter::Refresh(const CSiaCurl& siaCurl, CSiaDriveConfig* sia
     SetRenewWindow(renewWindow);
     SetPeriod(period);
     _currentAllowance = { funds, hosts, period, renewWindow };
-		CSiaFileTreePtr fileTree(new CSiaFileTree(siaCurl, siaDriveConfig));
-		if (ApiSuccess(siaCurl.Get(L"/renter/files", result)))
-		{
-			fileTree->BuildTree(result);
-      {
-        std::lock_guard<std::mutex> l(_fileTreeMutex);
-        _fileTree = fileTree;
-      }
+
+		if (ApiSuccess(RefreshFileTree()))
+    {
+      CSiaFileTreePtr fileTree;
+      GetFileTree(fileTree);
 
 			auto fileList = fileTree->GetFileList();
 			if (fileList.size())
@@ -127,6 +124,23 @@ void CSiaApi::_CSiaRenter::Refresh(const CSiaCurl& siaCurl, CSiaDriveConfig* sia
     SetRenewWindow(0);
     _currentAllowance = { 0,0,0,0 };
 	}
+}
+
+SiaApiError CSiaApi::_CSiaRenter::RefreshFileTree( )
+{
+  SiaApiError ret = SiaApiError::RequestError;
+  CSiaFileTreePtr tempTree(new CSiaFileTree(GetSiaCurl(), &GetSiaDriveConfig()));
+  json result;
+  if (ApiSuccess(GetSiaCurl().Get(L"/renter/files", result)))
+  {
+    tempTree->BuildTree(result);
+    {
+      std::lock_guard<std::mutex> l(_fileTreeMutex);
+      _fileTree = tempTree;
+    }
+  }
+
+  return ret;
 }
 
 SiaApiError CSiaApi::_CSiaRenter::FileExists(const SString& siaPath, bool& exists) const

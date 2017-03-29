@@ -181,6 +181,7 @@ public:
 		_SiaApiError GetFileTree(std::shared_ptr<_CSiaFileTree>& siaFileTree) const;
     _SiaRenterAllowance GetAllowance() const;
     _SiaApiError SetAllowance(const _SiaRenterAllowance& renterAllowance);
+    _SiaApiError RefreshFileTree( );
 	};
 
 	class SIADRIVE_EXPORTABLE _CSiaConsensus : 

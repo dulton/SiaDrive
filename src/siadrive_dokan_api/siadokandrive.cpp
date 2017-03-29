@@ -127,12 +127,7 @@ private:
 			{
 				do
 				{
-					CSiaFileTreePtr siaFileTree;
-					_siaApi->GetRenter()->GetFileTree(siaFileTree);
-					{
-						std::lock_guard<std::mutex> l(_fileTreeMutex);
-						_siaFileTree = siaFileTree;
-					}
+          RefreshActiveFileTree();
         } while (::WaitForSingleObject(_fileListStopEvent, 1000) == WAIT_TIMEOUT);
 			}));
 		}
@@ -147,6 +142,21 @@ private:
 			_fileListThread.reset(nullptr);
       ::CloseHandle(_fileListStopEvent);
 		}
+	}
+
+  static void RefreshActiveFileTree(const bool& force = false)
+	{
+    if (force)
+    {
+      _siaApi->GetRenter()->RefreshFileTree();
+    }
+
+    CSiaFileTreePtr siaFileTree;
+    _siaApi->GetRenter()->GetFileTree(siaFileTree);
+    {
+      std::lock_guard<std::mutex> l(_fileTreeMutex);
+      _siaFileTree = siaFileTree;
+    }
 	}
 
 	// Dokan callbacks
@@ -183,7 +193,7 @@ private:
 		{
 			// When filePath is a directory, needs to change the flag so that the file can
 			// be opened.
-			FilePath cacheFilePath(GetCacheLocation(), &fileName[1]);
+			FilePath cacheFilePath(GetCacheLocation(), fileName);
 			DWORD fileAttr = ::GetFileAttributes(&cacheFilePath[0]);
 
 			if ((fileAttr != INVALID_FILE_ATTRIBUTES) &&
@@ -211,7 +221,7 @@ private:
 				}
 				else if (creationDisposition == OPEN_ALWAYS) 
 				{
-					if (cacheFilePath.CreateDirectory()) 
+					if (!cacheFilePath.CreateDirectory()) 
 					{
 						DWORD error = GetLastError();
 						if (error != ERROR_ALREADY_EXISTS) 
@@ -228,20 +238,22 @@ private:
 						!(fileAttr & FILE_ATTRIBUTE_DIRECTORY) &&
 						(createOptions & FILE_DIRECTORY_FILE)) 
 					{
-						return STATUS_NOT_A_DIRECTORY;
+						ret = STATUS_NOT_A_DIRECTORY;
 					}
-
-					// FILE_FLAG_BACKUP_SEMANTICS is required for opening directory handles
-					HANDLE handle = ::CreateFile(&cacheFilePath[0], genericDesiredAccess, shareAccess, &securityAttrib, OPEN_EXISTING, fileAttributesAndFlags | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-					if (handle == INVALID_HANDLE_VALUE) 
-					{
-						DWORD error = GetLastError();
-						ret = DokanNtStatusFromWin32(error);
-					}
-					else 
-					{
-						dokanFileInfo->Context = reinterpret_cast<ULONG64>(handle); // save the file handle in Context
-					}
+          else
+          {
+            // FILE_FLAG_BACKUP_SEMANTICS is required for opening directory handles
+            HANDLE handle = ::CreateFile(&cacheFilePath[0], genericDesiredAccess, shareAccess, &securityAttrib, OPEN_EXISTING, fileAttributesAndFlags | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+            if (handle == INVALID_HANDLE_VALUE)
+            {
+              DWORD error = GetLastError();
+              ret = DokanNtStatusFromWin32(error);
+            }
+            else
+            {
+              dokanFileInfo->Context = reinterpret_cast<ULONG64>(handle); // save the file handle in Context
+            }
+          }
 				}
 			}
 			else // File (cache and/or Sia operation)
@@ -927,6 +939,7 @@ private:
 				{
 				}
 			}
+      RefreshActiveFileTree(true);
 		}
 	}
 
