@@ -484,15 +484,18 @@ private:
         {
           if ((wcscmp(fileName, L"\\") != 0) || (wcscmp(findData.cFileName, L".") != 0) && (wcscmp(findData.cFileName, L"..") != 0))
           {
-            if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+            if (!(SString(findData.cFileName).EndsWith(".siadrive") || SString(findData.cFileName).EndsWith(".siadrive.temp")))
             {
-              dirs.insert({findData.cFileName, 0});
+              if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+              {
+                dirs.insert({ findData.cFileName, 0 });
+              }
+              else
+              {
+                files.insert({ findData.cFileName, 1 });
+              }
+              fillFindData(&findData, dokanFileInfo);
             }
-            else
-            {
-              files.insert({ findData.cFileName, 1 });
-            }
-            fillFindData(&findData, dokanFileInfo);
           }
         } while (::FindNextFile(findHandle, &findData) != 0);
         ::FindClose(findHandle);
