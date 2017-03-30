@@ -308,7 +308,7 @@ void CUploadManager::AutoThreadCallback(const CSiaCurl& siaCurl, CSiaDriveConfig
 					}
 				}
 				// Upload is complete
-				else if ((*it)->GetUploadProgress() >= 100)
+				else if ((*it)->GetAvailable())
 				{
 					SET_STATUS(UploadStatus::Complete, UploadComplete, ModifyUploadStatusFailed)
 					if (!RetryDeleteFileIfExists(siaDriveFilePath))
