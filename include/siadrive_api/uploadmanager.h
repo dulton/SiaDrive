@@ -26,7 +26,7 @@ public:
 		Error
 	};
 
-	enum class _UploadError
+	enum class _UploadErrorCode
 	{
 		Success,
 		SourceFileNotFound,
@@ -68,12 +68,13 @@ public:
 
 public:
 	_UploadStatus GetUploadStatus(const SString& siaPath);
-	_UploadError AddOrUpdate(const SString& siaPath, SString filePath);
-	_UploadError Remove(const SString& siaPath);
+  CSiaError<_UploadErrorCode> AddOrUpdate(const SString& siaPath, SString filePath);
+  CSiaError<_UploadErrorCode> Remove(const SString& siaPath);
 };
 
-typedef Sia::Api::CUploadManager::_UploadStatus UploadStatus;
-typedef Sia::Api::CUploadManager::_UploadError UploadError;
+typedef CUploadManager::_UploadStatus UploadStatus;
+typedef CUploadManager::_UploadErrorCode UploadErrorCode;
+typedef CSiaError<CUploadManager::_UploadErrorCode> UploadError;
 
 // Event Notifications
 class CreatingTemporarySiaDriveFile :
@@ -388,7 +389,7 @@ public:
 private:
 	const SString _siaPath;
 	const SString _filePath;
-	const SiaCurlError _curlError = SiaCurlError::Success;
+  const SiaCurlError _curlError;
 
 public:
 	virtual SString GetSingleLineMessage() const override

@@ -43,10 +43,11 @@ protected:
 class SIADRIVE_EXPORTABLE CSiaApi
 {
 public:
-	enum class _SiaApiError 
+	enum class _SiaApiErrorCode
 	{
 		Success,
 		NotImplemented,
+    NotConnected,
 		RequestError,
 		WalletExists,
 		WalletLocked,
@@ -133,10 +134,10 @@ public:
     virtual void Refresh(const CSiaCurl& siaCurl, CSiaDriveConfig* siaDriveConfig);
 
 	public:
-		_SiaApiError Create(const _SiaSeedLanguage& seedLanguage, SString& seed);
-		_SiaApiError Restore(const SString& seed);
-		_SiaApiError Lock();
-		_SiaApiError Unlock(const SString& password);
+		CSiaError<_SiaApiErrorCode> Create(const _SiaSeedLanguage& seedLanguage, SString& seed);
+		CSiaError<_SiaApiErrorCode> Restore(const SString& seed);
+		CSiaError<_SiaApiErrorCode> Lock();
+		CSiaError<_SiaApiErrorCode> Unlock(const SString& password);
 	};
 
 	class SIADRIVE_EXPORTABLE _CSiaRenter :
@@ -176,12 +177,12 @@ public:
 		void Refresh(const CSiaCurl& siaCurl, CSiaDriveConfig* siaDriveConfig);
 
 	public:
-		_SiaApiError FileExists(const SString& siaPath, bool& exists) const;
-		_SiaApiError DownloadFile(const SString& siaPath, const SString& location) const;
-		_SiaApiError GetFileTree(std::shared_ptr<_CSiaFileTree>& siaFileTree) const;
+    CSiaError<_SiaApiErrorCode> FileExists(const SString& siaPath, bool& exists) const;
+    CSiaError<_SiaApiErrorCode> DownloadFile(const SString& siaPath, const SString& location) const;
+    CSiaError<_SiaApiErrorCode> GetFileTree(std::shared_ptr<_CSiaFileTree>& siaFileTree) const;
     _SiaRenterAllowance GetAllowance() const;
-    _SiaApiError SetAllowance(const _SiaRenterAllowance& renterAllowance);
-    _SiaApiError RefreshFileTree( );
+    CSiaError<_SiaApiErrorCode> SetAllowance(const _SiaRenterAllowance& renterAllowance);
+    CSiaError<_SiaApiErrorCode> RefreshFileTree( );
 	};
 
 	class SIADRIVE_EXPORTABLE _CSiaConsensus : 
@@ -233,7 +234,8 @@ public:
 	SiaHostConfig GetHostConfig() const;
 };
 
-typedef CSiaApi::_SiaApiError SiaApiError;
+typedef CSiaApi::_SiaApiErrorCode SiaApiErrorCode;
+typedef CSiaError<SiaApiErrorCode> SiaApiError;
 typedef CSiaApi::_SiaSeedLanguage SiaSeedLanguage;
 typedef CSiaApi::_CSiaWallet CSiaWallet;
 typedef CSiaApi::_CSiaRenter CSiaRenter;

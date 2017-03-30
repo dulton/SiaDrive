@@ -1,24 +1,29 @@
 // Main
 (() => {
+  function setInnerText(id, text) {
+    document.getElementById(id).innerText = text;
+  }
+
+  function setValue(id, value) {
+    document.getElementById(id).value = value;
+  }
+
+  function getValue(id) {
+    return document.getElementById(id).value;
+  }
+
+  function setSelect(id, itemList) {
+    const select = document.getElementById(id);
+    select.innerHTML = "";
+
+    for (const item of itemList) {
+      const opt = document.createElement('option');
+      opt.innerText = item;
+      select.appendChild(opt);
+    }
+  }
+
   window.uiUpdate = (()=> {
-    function setInnerText(id, text) {
-      document.getElementById(id).innerText = text;
-    }
-
-    function setValue(id, value) {
-      document.getElementById(id).value = value;
-    }
-
-    function setSelect(id, itemList) {
-      const select = document.getElementById(id);
-      select.innerHTML = "";
-
-      for (const item of itemList) {
-        const opt = document.createElement('option');
-        opt.innerText = item;
-        select.appendChild(opt);
-      }
-    }
 
     const _renter = (()=> {
       return {
@@ -116,11 +121,21 @@
       return window.uiState.isWalletLocked;
     }
 
+    function _allocatedRenterFunds() {
+      return window.uiState.allocatedRenterFunds;
+    }
+
+    function _defaultRenterSettings() {
+      return window.uiState.defaultRenterSettings;
+    }
+
     return {
       clientVersion: _clientVersion,
       isOnline: _isOnline,
       isWalletConfigured: _isWalletConfigured,
-      isWalletLocked: _isWalletLocked
+      isWalletLocked: _isWalletLocked,
+      allocatedRenterFunds: _allocatedRenterFunds,
+      defaultRenterSettings: _defaultRenterSettings
     };
   })();
 
@@ -156,8 +171,8 @@
       window.appActions.shutdown();
     }
 
-    function _setRenterAllowance(allowance) {
-      window.appActions.setRenterAllowance(allowance);
+    function _setRenterSettings(allowance, cb) {
+      window.appActions.setRenterSettings(allowance, cb);
     }
 
     return {
@@ -168,7 +183,7 @@
       unlockWallet: _unlockWallet,
       unmountDrive: _unmountDrive,
       shutdown: _shutdown,
-      setRenterAllowance: _setRenterAllowance
+      setRenterSettings: _setRenterSettings
     };
   })();
 
@@ -220,42 +235,78 @@
     const mountSelect = document.getElementById('ID_MountDrives');
 
     _mountHandler = ()=> {
-      mountButton.onclick = null;
-      mountButton.disabled = true;
-      mountSelect.disabled = true;
-      if (mountButton.innerText === "Mount") {
-        AppActions.mountDrive(mountSelect.value, (success, reason) => {
-          if (success) {
-            mountButton.innerText = "Unmount";
-          } else {
-            displayErrorPopup('Mount Failed', reason);
-          }
-          mountButton.onclick = _mountHandler;
-          mountButton.disabled = false;
-        });
+      if (UiState.allocatedRenterFunds() === '0') {
+        displayErrorPopup('Error', 'Renter funding must be configured before trying to mount.')
       } else {
-        AppActions.unmountDrive((success, reason) => {
-          if (success) {
-            _notifyDriveUnmounted()
-          } else {
-            displayErrorPopup('Unmount Failed', reason);
+        mountButton.onclick = null;
+        mountButton.disabled = true;
+        mountSelect.disabled = true;
+        if (mountButton.innerText === "Mount") {
+          AppActions.mountDrive(mountSelect.value, (success, reason) => {
+            if (success) {
+              mountButton.innerText = "Unmount";
+            } else {
+              displayErrorPopup('Mount Failed', reason);
+            }
             mountButton.onclick = _mountHandler;
             mountButton.disabled = false;
-          }
-        });
+          });
+        } else {
+          AppActions.unmountDrive((success, reason) => {
+            if (success) {
+              _notifyDriveUnmounted()
+            } else {
+              displayErrorPopup('Unmount Failed', reason);
+              mountButton.onclick = _mountHandler;
+              mountButton.disabled = false;
+            }
+          });
+        }
       }
     };
     mountButton.onclick = _mountHandler;
   }
 
   function handleRenterEditSettings() {
-
     setMainWindow('renter_settings_window');
+    const defaultsButton = document.getElementById('ID_RenterSettingsDefaults');
+    defaultsButton.onclick = ()=> {
+      const settings = UiState.defaultRenterSettings();
+      if (getValue('ID_RenterSetFunds') === '0') {
+        setValue('ID_RenterSetFunds', settings.Funds);
+      }
+      setValue('ID_RenterSetHosts', settings.Hosts);
+      setValue('ID_RenterSetPeriod', settings.Period);
+      setValue('ID_RenterSetRenewWindow', settings.RenewWindowInBlocks);
+    };
+
     const cancelButton = document.getElementById('ID_RenterSettingsCancel');
     cancelButton.onclick = ()=> {
+      saveButton.onclick = null;
       cancelButton.onclick = null;
+      defaultsButton.onclick = null;
       beginMainApplication();
-    }
+    };
+
+    const saveButton = document.getElementById('ID_RenterSettingsOK');
+    saveButton.onclick = ()=> {
+      saveButton.onclick = null;
+      cancelButton.onclick = null;
+      defaultsButton.onclick = null;
+      AppActions.setRenterSettings({
+        'Funds': getValue('ID_RenterSetFunds'),
+        'Hosts': getValue('ID_RenterSetHosts'),
+        'Period': getValue('ID_RenterSetPeriod'),
+        'RenewWindowInBlocks': getValue('ID_RenterSetRenewWindow')
+      }, (success, reason)=> {
+        if (success) {
+          beginMainApplication();
+        } else {
+          displayErrorPopup('Allocation Failed', reason);
+          handleRenterEditSettings();
+        }
+      });
+    };
   }
 
   function handleUnlockWallet() {

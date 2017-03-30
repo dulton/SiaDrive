@@ -5,10 +5,6 @@
 #define SIDRIVE_VERSION_STRING "0.0.1"
 #define COMPAT_SIAD_VERSION "1.1.2"
 
-const std::uint8_t SIA_BLOCKS_PER_MIN = 10;
-const std::uint32_t MINUTES_PER_MONTH = (730 * 60);
-const std::uint32_t SIA_BLOCKS_PER_MONTH = MINUTES_PER_MONTH / SIA_BLOCKS_PER_MIN;
-
 #ifdef _WIN32 
   // Disable DLL-interface warnings
   #pragma warning(disable: 4251)
@@ -85,6 +81,17 @@ public:
 	}
 };
 
+typedef ttmath::UInt<256> Hastings;
+typedef ttmath::Big<1, 30> SiaCurrency;
+
+const std::uint8_t SIA_BLOCK_TIME_MINS = 10;
+const std::uint32_t MINUTES_PER_MONTH = (730 * 60);
+const std::uint32_t SIA_BLOCKS_PER_MONTH = MINUTES_PER_MONTH / SIA_BLOCK_TIME_MINS;
+const std::uint32_t SIA_DEFAULT_HOST_COUNT = 50;
+const std::uint32_t SIA_DEFAULT_RENEW_WINDOW = ((1440 / SIA_BLOCK_TIME_MINS) * 14);
+const SiaCurrency SIA_DEFAULT_MINIMUM_FUNDS = 4000;
+const std::uint32_t SIA_DEFAULT_CONTRACT_LENGTH = SIA_BLOCKS_PER_MONTH * 3;
+
 #define DEFAULT_CONFIG_FILE_PATH L"./config/siadriveconfig.json"
 #define DEFAULT_RENTER_DB_FILE_PATH L"./config/renter_upload.db3"
 
@@ -102,6 +109,36 @@ get_access:\
 set_access:\
 	type Set##name(const type& value) { json_doc[#name] = value; return value; }
 
+template<typename T>
+class CSiaError
+{
+public:
+  CSiaError()
+  {
+    SetCode(T::Success);
+  }
+
+  CSiaError(const T& t)
+  {
+    SetCode(t);
+  }
+
+  CSiaError(const T& code, const SString& reason)
+  {
+    SetCode(code);
+    SetReason(reason);
+  }
+
+public:
+  Property(T, Code, public, private)
+    Property(SString, Reason, public, private)
+
+public:
+  operator bool() { return GetCode() == T::Success; }
+  operator bool() const { return GetCode() == T::Success; }
+  CSiaError& operator=(const T& code) { SetCode(code); return *this; }
+};
+
 typedef struct 
 {
 	SString HostName;
@@ -111,20 +148,9 @@ typedef struct
 
 template<typename T>
 inline bool ApiSuccess(const T& t) {
-	return t == T::Success;
+  return static_cast<bool>(t);
 }
 
-typedef ttmath::UInt<256> Hastings;
-typedef ttmath::Big<1, 30> SiaCurrency;
-
-/*
- BigNumber.config({ EXPONENTIAL_AT: 1e+9 })
- BigNumber.config({ DECIMAL_PLACES: 30 })
-
-const hastingsPerSiacoin = new BigNumber('10').toPower(24)
-const siacoinsToHastings = (siacoins) => new BigNumber(siacoins).times(hastingsPerSiacoin)
-const hastingsToSiacoins = (hastings) => new BigNumber(hastings).dividedBy(hastingsPerSiacoin)
- */
 inline static SiaCurrency HastingsStringToSiaCurrency(const SString& value)
 {
 	ttmath::Parser<SiaCurrency> parser;
@@ -147,9 +173,11 @@ inline static SString SiaCurrencyToHastingsString(const SiaCurrency& value)
   parser.Parse(value.ToString() + " * (10 ^ 24)");
 
   ttmath::Conv conv;
+  conv.scient_from = 256;
   conv.base = 10;
   conv.round = 0;
-  return parser.stack[0].value.ToWString(conv);
+  SString ret = parser.stack[0].value.ToWString(conv);
+  return ret;
 }
 
 inline static SString SiaCurrencyToGB(const SiaCurrency& value)

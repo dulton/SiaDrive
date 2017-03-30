@@ -9,7 +9,7 @@ NS_BEGIN(Api)
 class SIADRIVE_EXPORTABLE CSiaCurl
 {
 public:
-	enum class _SiaCurlError
+	enum class _SiaCurlErrorCode
 	{
 		Success,
 		ServerVersionMismatch,
@@ -36,23 +36,23 @@ public:
 	static SString UrlEncode(const SString& data, const bool& allowSlash = false);
 
 private:
-	static _SiaCurlError CheckApiError(const json& result);
-	static _SiaCurlError CheckHttpError(const std::string& result);
+  static SString CSiaCurl::GetApiErrorMessage(const json& result);
 
 private:
 	std::string ConstructPath(const SString& relativePath) const;
-	_SiaCurlError _Get(const SString& path, const _HttpParameters& parameters, json& response) const;
-	bool CheckVersion(_SiaCurlError& error) const;
-	_SiaCurlError ProcessResponse(const int& res, const int& httpCode, const std::string& result, json& response) const;
+  CSiaError<_SiaCurlErrorCode> _Get(const SString& path, const _HttpParameters& parameters, json& response) const;
+	bool CheckVersion(CSiaError<_SiaCurlErrorCode>& error) const;
+  CSiaError<_SiaCurlErrorCode> ProcessResponse(const int& res, const int& httpCode, const std::string& result, json& response) const;
 
 public:
 	SString GetServerVersion() const;
-	_SiaCurlError Get(const SString& path, json& result) const;
-	_SiaCurlError Get(const SString& path, const _HttpParameters& parameters, json& result) const;
-	_SiaCurlError Post(const SString& path, const _HttpParameters& parameters, json& response) const;
+  CSiaError<_SiaCurlErrorCode> Get(const SString& path, json& result) const;
+  CSiaError<_SiaCurlErrorCode> Get(const SString& path, const _HttpParameters& parameters, json& result) const;
+  CSiaError<_SiaCurlErrorCode> Post(const SString& path, const _HttpParameters& parameters, json& response) const;
 };
 
-typedef CSiaCurl::_SiaCurlError SiaCurlError;
+typedef CSiaCurl::_SiaCurlErrorCode SiaCurlErrorCode;
+typedef CSiaError<SiaCurlErrorCode> SiaCurlError;
 typedef CSiaCurl::_HttpParameters HttpParameters;
 
 NS_END(2)

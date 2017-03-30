@@ -83,20 +83,26 @@ void CSiaApi::_CSiaWallet::Refresh(const CSiaCurl& siaCurl, CSiaDriveConfig* sia
 
 SiaApiError CSiaApi::_CSiaWallet::Create(const SiaSeedLanguage& seedLanguage, SString& seed)
 {
-	SiaApiError error = SiaApiError::RequestError;
+  SiaApiError error = SiaApiErrorCode::NotConnected;
 	if (GetConnected())
 	{
-		error = SiaApiError::WalletExists;
-		if (!GetCreated())
+		if (GetCreated())
 		{
-			error = SiaApiError::RequestError;
+		  error = SiaApiErrorCode::WalletExists;
+		}
+    else
+		{
 			json result;
 			SiaCurlError cerror = GetSiaCurl().Post(L"/wallet/init", { {L"dictionary", SeedLangToString(seedLanguage)} }, result);
 			if (ApiSuccess(cerror))
 			{
-				error = SiaApiError::Success;
+				error = SiaApiErrorCode::Success;
 				seed = result["primaryseed"].get<std::string>();
 			}
+      else
+      {
+        error = { SiaApiErrorCode::RequestError, cerror.GetReason() };
+      }
 		}
 	}
 
@@ -105,24 +111,26 @@ SiaApiError CSiaApi::_CSiaWallet::Create(const SiaSeedLanguage& seedLanguage, SS
 
 SiaApiError CSiaApi::_CSiaWallet::Restore(const SString& seed)
 {
-	SiaApiError error = SiaApiError::NotImplemented;
+	SiaApiError error = SiaApiErrorCode::NotImplemented;
 	// TODO Future enhancement
 	return error;
 }
 
 SiaApiError CSiaApi::_CSiaWallet::Lock()
 {
-	SiaApiError error = GetCreated() ? (GetLocked() ? SiaApiError::WalletLocked : SiaApiError::Success) : SiaApiError::WalletNotCreated;
+	SiaApiError error = GetCreated() ? (GetLocked() ? SiaApiErrorCode::WalletLocked : SiaApiErrorCode::Success) : SiaApiErrorCode::WalletNotCreated;
 	if (ApiSuccess(error))
 	{
-		error = SiaApiError::RequestError;
-
 		json result;
 		SiaCurlError cerror = GetSiaCurl().Post(L"/wallet/lock", {}, result);
 		if (ApiSuccess(cerror))
 		{
-			error = SiaApiError::Success;
+			error = SiaApiErrorCode::Success;
 		}
+    else
+    {
+      error = { SiaApiErrorCode::RequestError, cerror.GetReason() };
+    }
 	}
 
 	return error;
@@ -130,17 +138,19 @@ SiaApiError CSiaApi::_CSiaWallet::Lock()
 
 SiaApiError CSiaApi::_CSiaWallet::Unlock(const SString& password)
 {
-	SiaApiError error = GetCreated() ? (GetLocked() ? SiaApiError::Success : SiaApiError::WalletUnlocked) : SiaApiError::WalletNotCreated;
+	SiaApiError error = GetCreated() ? (GetLocked() ? SiaApiErrorCode::Success : SiaApiErrorCode::WalletUnlocked) : SiaApiErrorCode::WalletNotCreated;
 	if (ApiSuccess(error))
 	{
-		error = SiaApiError::RequestError;
-
 		json result;
 		SiaCurlError cerror = GetSiaCurl().Post(L"/wallet/unlock", { {L"encryptionpassword", password} }, result);
 		if (ApiSuccess(cerror))
 		{
-			error = SiaApiError::Success;
+			error = SiaApiErrorCode::Success;
 		}
+    else
+    {
+      error = { SiaApiErrorCode::RequestError, cerror.GetReason() };
+    }
 	}
 
 	return error;

@@ -387,7 +387,7 @@ UploadStatus CUploadManager::GetUploadStatus(const SString& siaPath)
 
 UploadError CUploadManager::AddOrUpdate(const SString& siaPath, SString filePath)
 {
-	UploadError ret = UploadError::Success;
+  UploadError ret;
 
 	// Relative to absolute and grab parent folder of source
 	FilePath rootPath = filePath;
@@ -439,26 +439,26 @@ UploadError CUploadManager::AddOrUpdate(const SString& siaPath, SString filePath
 					else
 					{
 						CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DatabaseInsertFailed(siaPath, filePath, insert.getErrorMsg())));
-						ret = UploadError::DatabaseError;
+						ret = UploadErrorCode::DatabaseError;
 					}
 				}
 				catch (SQLite::Exception e)
 				{
 					CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DatabaseExceptionOccurred("AddOrUpdate(insert)", e)));
-					ret = UploadError::DatabaseError;
+          ret = { UploadErrorCode::DatabaseError, e.getErrorStr() };
 				}
 			}
 		}
 		catch (SQLite::Exception e)
 		{
 			CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DatabaseExceptionOccurred("AddOrUpdate(query)", e)));
-			ret = UploadError::DatabaseError;
+      ret = { UploadErrorCode::DatabaseError, e.getErrorStr() };
 		}
 	}
 	else
 	{
 		CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(SourceFileNotFound(siaPath, filePath)));
-		ret = UploadError::SourceFileNotFound;
+		ret = UploadErrorCode::SourceFileNotFound;
 	}
 
 	return ret;
@@ -466,7 +466,7 @@ UploadError CUploadManager::AddOrUpdate(const SString& siaPath, SString filePath
 
 UploadError CUploadManager::Remove(const SString& siaPath)
 {
-	UploadError ret = UploadError::Success;
+  UploadError ret;
 	bool remove = false;
   SString siaDriveFilePath;
 	try
@@ -506,7 +506,7 @@ UploadError CUploadManager::Remove(const SString& siaPath)
 	catch (SQLite::Exception e)
 	{
 		CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DatabaseExceptionOccurred("Remove", e)));
-		ret = UploadError::DatabaseError;
+    ret = { UploadErrorCode::DatabaseError, e.getErrorStr() };
 	}
 
 	if (remove)

@@ -35,21 +35,13 @@ SString CSiaCurl::UrlEncode(const SString& data, const bool& allowSlash)
 	return ret;
 }
 
-SiaCurlError CSiaCurl::CheckApiError(const json& result)
+SString CSiaCurl::GetApiErrorMessage(const json& result)
 {
-	SiaCurlError ret = SiaCurlError::Success;
+
+  SString ret;
 	if (result.find("message") != result.end())
 	{
-		ret = SiaCurlError::UnknownFailure;
-
-		const std::string msg = result["message"].get<std::string>();
-		if ((msg.length() >= 3))
-		{
-			if ((msg.substr(0, 3) == "404"))
-			{
-				ret = SiaCurlError::HttpError;
-			}
-		}
+		ret = result["message"].get<std::string>();
 	}
 
 	return ret;
@@ -61,40 +53,29 @@ std::string CSiaCurl::ConstructPath(const SString& relativePath) const
 	return ret;
 }
 
-SiaCurlError CSiaCurl::CheckHttpError(const std::string& result)
-{
-	if (result.length() && ((result.length() < 2) || (result[0] != '{')))
-	{
-		return SiaCurlError::HttpError;
-	}
-
-	return SiaCurlError::Success;
-}
-
 SiaCurlError CSiaCurl::ProcessResponse(const int& res, const int& httpCode, const std::string& result, json& response) const
 {
-	SiaCurlError ret;
+  SiaCurlError ret;
 	if ((res == CURLE_OK) && ((httpCode >= 200) && (httpCode <300)))
 	{
-		ret = CheckHttpError(result);
-		if (ApiSuccess(ret))
-		{
-			ret = (result.length() ? CheckApiError((response = json::parse(result.c_str()))) : SiaCurlError::Success);
-		}
+    if (result.length())
+    {
+      response = json::parse(result.c_str());
+    }
 	}
 	else
 	{
 		if ((res == CURLE_COULDNT_RESOLVE_HOST) || (res == CURLE_COULDNT_CONNECT))
 		{
-			ret = SiaCurlError::NoResponse;
+			ret = SiaCurlErrorCode::NoResponse;
 		}
 		else if (httpCode)
 		{
-			ret = SiaCurlError::HttpError;
+      ret = { SiaCurlErrorCode::HttpError, GetApiErrorMessage(result) };
 		}
 		else
 		{
-			ret = SiaCurlError::UnknownFailure;
+      ret = { SiaCurlErrorCode::UnknownFailure, "Unknown curl error" };
 		}
 	}
 
@@ -140,14 +121,14 @@ SiaCurlError CSiaCurl::_Get(const SString& path, const HttpParameters& parameter
 
 bool CSiaCurl::CheckVersion(SiaCurlError& error) const
 {
-	error = SiaCurlError::InvalidRequiredVersion;
+	error = SiaCurlErrorCode::InvalidRequiredVersion;
 	if (GetHostConfig().RequiredVersion.Length())
 	{
-		error = SiaCurlError::NoResponse;
+		error = SiaCurlErrorCode::NoResponse;
 		const SString serverVersion = GetServerVersion();
 		if (serverVersion.Length())
 		{
-			error = (serverVersion == GetHostConfig().RequiredVersion) ? SiaCurlError::Success : SiaCurlError::ServerVersionMismatch;
+			error = (serverVersion == GetHostConfig().RequiredVersion) ? SiaCurlErrorCode::Success : SiaCurlErrorCode::ServerVersionMismatch;
 		}
 	}
 

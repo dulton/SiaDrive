@@ -80,6 +80,13 @@ void CSiaApi::_CSiaRenter::Refresh(const CSiaCurl& siaCurl, CSiaDriveConfig* sia
     SetPeriod(period);
     _currentAllowance = { funds, hosts, period, renewWindow };
 
+    if (_currentAllowance.Funds == 0)
+    {
+      _currentAllowance.Funds = SIA_DEFAULT_MINIMUM_FUNDS;
+      _currentAllowance.Hosts = SIA_DEFAULT_HOST_COUNT;
+      _currentAllowance.Period = SIA_DEFAULT_CONTRACT_LENGTH;
+      _currentAllowance.RenewWindowInBlocks = SIA_DEFAULT_RENEW_WINDOW;
+    }
 		if (ApiSuccess(RefreshFileTree()))
     {
       CSiaFileTreePtr fileTree;
@@ -96,7 +103,7 @@ void CSiaApi::_CSiaRenter::Refresh(const CSiaCurl& siaCurl, CSiaDriveConfig* sia
 				std::uint32_t totalProgress = std::accumulate(std::next(fileList.begin()), fileList.end(), fileList[0]->GetUploadProgress(), [](const std::uint32_t& progress, const CSiaFilePtr& file)
 				{
 					return progress + min(100, file->GetUploadProgress());
-				}) / fileList.size();
+				}) / static_cast<std::uint32_t>(fileList.size());
 
 				SetTotalUsedBytes(total);
 				SetTotalUploadProgress(totalProgress);
@@ -128,16 +135,21 @@ void CSiaApi::_CSiaRenter::Refresh(const CSiaCurl& siaCurl, CSiaDriveConfig* sia
 
 SiaApiError CSiaApi::_CSiaRenter::RefreshFileTree( )
 {
-  SiaApiError ret = SiaApiError::RequestError;
+  SiaApiError ret;
   CSiaFileTreePtr tempTree(new CSiaFileTree(GetSiaCurl(), &GetSiaDriveConfig()));
-  json result;
-  if (ApiSuccess(GetSiaCurl().Get(L"/renter/files", result)))
+  json result;  
+  SiaCurlError cerror = GetSiaCurl().Get(L"/renter/files", result);
+  if (ApiSuccess(cerror))
   {
     tempTree->BuildTree(result);
     {
       std::lock_guard<std::mutex> l(_fileTreeMutex);
       _fileTree = tempTree;
     }
+  }
+  else
+  {
+    ret = { SiaApiErrorCode::RequestError, cerror.GetReason() };
   }
 
   return ret;
@@ -151,16 +163,18 @@ SiaApiError CSiaApi::_CSiaRenter::FileExists(const SString& siaPath, bool& exist
 	{
 		exists = siaFileTree->FileExists(siaPath);
 	}
+
 	return ret;
 }
 
 SiaApiError CSiaApi::_CSiaRenter::DownloadFile(const SString& siaPath, const SString& location) const
 {
-	SiaApiError ret = SiaApiError::RequestError;
+  SiaApiError ret;
 	json result;
-	if (ApiSuccess(GetSiaCurl().Get(L"/renter/download/" + siaPath, { { L"destination", location } }, result)))
+  auto cerror = GetSiaCurl().Get(L"/renter/download/" + siaPath, { { L"destination", location } }, result);
+	if (!ApiSuccess(cerror))
 	{
-		ret = SiaApiError::Success;
+    ret = { SiaApiErrorCode::RequestError, cerror.GetReason() };
 	}
 
 	return ret;
@@ -174,7 +188,7 @@ SiaApiError CSiaApi::_CSiaRenter::GetFileTree(CSiaFileTreePtr& siaFileTree) cons
     siaFileTree.reset(new CSiaFileTree(GetSiaCurl(), &GetSiaDriveConfig()));
   }
 
-	return SiaApiError::Success;
+	return SiaApiErrorCode::Success;
 }
 
 SiaRenterAllowance CSiaApi::_CSiaRenter::GetAllowance() const
@@ -184,18 +198,19 @@ SiaRenterAllowance CSiaApi::_CSiaRenter::GetAllowance() const
 
 SiaApiError CSiaApi::_CSiaRenter::SetAllowance(const SiaRenterAllowance& renterAllowance)
 {
-  SiaApiError ret = SiaApiError::RequestError;
+  SiaApiError ret;
 
   json result;
-  if (ApiSuccess(GetSiaCurl().Post(L"/renter", 
+  auto cerror = GetSiaCurl().Post(L"/renter", 
   { 
     {       "funds", SiaCurrencyToHastingsString(renterAllowance.Funds) },
     {       "hosts", SString::FromUInt64(renterAllowance.Hosts) },
     {      "period", SString::FromUInt64(renterAllowance.Period) },
     { "renewwindow", SString::FromUInt64 (renterAllowance.RenewWindowInBlocks) }
-  }, result)))
+  }, result);
+  if (!ApiSuccess(cerror))
   {
-    ret = SiaApiError::Success;
+    ret = { SiaApiErrorCode::RequestError, cerror.GetReason() };
   }
 
   return ret;

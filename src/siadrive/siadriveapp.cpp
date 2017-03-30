@@ -188,7 +188,24 @@ public:
       _shutdownCallback();
       return true;
     }
+    else if (name == "setRenterSettings")
+    {
+      CefRefPtr<CefV8Value> vAllowance = arguments[0];
+      CefRefPtr<CefV8Value> cb = arguments[1];
+      SiaRenterAllowance allowance({ 
+        SiaCurrency(vAllowance->GetValue("Funds")->GetStringValue().ToWString()), 
+        SString::ToUInt32(vAllowance->GetValue("Hosts")->GetStringValue().ToWString()), 
+        SString::ToUInt32(vAllowance->GetValue("Period")->GetStringValue().ToWString()), 
+        SString::ToUInt32(vAllowance->GetValue("RenewWindowInBlocks")->GetStringValue().ToWString())
+      });
+      auto ret = _siaApi.GetRenter()->SetAllowance(allowance);
 
+      CefV8ValueList args;
+      args.push_back(CefV8Value::CreateBool(ApiSuccess(ret)));
+      args.push_back(CefV8Value::CreateString(ret.GetReason().str()));
+      cb->ExecuteFunctionWithContext(context, nullptr, args);
+      return true;
+    }
     // Function does not exist.
     return false;
   }
@@ -274,6 +291,13 @@ void CSiaDriveApp::OnContextCreated(
   obj->SetValue("isWalletConfigured", CefV8Value::CreateBool(_siaApi->GetWallet()->GetCreated()), V8_PROPERTY_ATTRIBUTE_NONE);
   obj->SetValue("isOnline", CefV8Value::CreateBool(_siaApi->GetWallet()->GetConnected()), V8_PROPERTY_ATTRIBUTE_NONE);
   obj->SetValue("clientVersion", CefV8Value::CreateString(SIDRIVE_VERSION_STRING), V8_PROPERTY_ATTRIBUTE_NONE);
+  obj->SetValue("allocatedRenterFunds", CefV8Value::CreateString(_siaApi->GetRenter()->GetFunds().ToString()), V8_PROPERTY_ATTRIBUTE_NONE);
+  CefRefPtr<CefV8Value> defaultFunds = CefV8Value::CreateObject(nullptr, nullptr);
+  defaultFunds->SetValue("Funds", CefV8Value::CreateString(SIA_DEFAULT_MINIMUM_FUNDS.ToString()), V8_PROPERTY_ATTRIBUTE_NONE);
+  defaultFunds->SetValue("Hosts", CefV8Value::CreateString(SString::FromUInt32(SIA_DEFAULT_HOST_COUNT).str()), V8_PROPERTY_ATTRIBUTE_NONE);
+  defaultFunds->SetValue("Period", CefV8Value::CreateString(SString::FromUInt32(SIA_DEFAULT_CONTRACT_LENGTH).str()), V8_PROPERTY_ATTRIBUTE_NONE);
+  defaultFunds->SetValue("RenewWindowInBlocks", CefV8Value::CreateString(SString::FromUInt32(SIA_DEFAULT_RENEW_WINDOW).str()), V8_PROPERTY_ATTRIBUTE_NONE);
+  obj->SetValue("defaultRenterSettings", defaultFunds, V8_PROPERTY_ATTRIBUTE_NONE);
   global->SetValue("uiState", obj, V8_PROPERTY_ATTRIBUTE_NONE);
 
   CefRefPtr<FunctionHandler> handler(new FunctionHandler(*_siaApi, _appStarted, _siaDriveConfig, _siaDrive, [this]() {this->ShutdownServices(); }, [this](CefRefPtr<CefV8Context> context) {this->SiaApiRefreshCallback(context, *_siaCurl, _siaDriveConfig.get()); }));
@@ -285,6 +309,7 @@ void CSiaDriveApp::OnContextCreated(
   obj->SetValue("mountDrive", CefV8Value::CreateFunction("mountDrive", handler), V8_PROPERTY_ATTRIBUTE_NONE);
   obj->SetValue("unmountDrive", CefV8Value::CreateFunction("unmountDrive", handler), V8_PROPERTY_ATTRIBUTE_NONE);
   obj->SetValue("shutdown", CefV8Value::CreateFunction("shutdown", handler), V8_PROPERTY_ATTRIBUTE_NONE);
+  obj->SetValue("setRenterSettings", CefV8Value::CreateFunction("setRenterSettings", handler), V8_PROPERTY_ATTRIBUTE_NONE);
   global->SetValue("appActions", obj, V8_PROPERTY_ATTRIBUTE_NONE);
   
   _refreshThread.reset(new CAutoThread(*_siaCurl, _siaDriveConfig.get(), [this, context](const CSiaCurl& siaCurl, CSiaDriveConfig* siaDriveConfig)
