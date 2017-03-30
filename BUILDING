@@ -4,6 +4,7 @@ BUILD INSTRUCTIONS
 2. For Debug, execute 'build_debug_x64.cmd'
 3. For Release, execute 'build_release_x64.cmd'
 4. After building, you will find the entire release in 'dist\Debug' or 'dist\Release'
+5. Install https://github.com/dokan-dev/dokany/releases/download/v1.0.3/Dokan_x64.msi
 
 NOTE: CEF takes several hours to build. This only happens once per release type (Debug/Release).
 
