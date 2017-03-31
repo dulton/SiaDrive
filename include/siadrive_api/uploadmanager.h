@@ -20,7 +20,6 @@ public:
 	{
 		NotFound,
 		Queued,
-		Modified,
 		Uploading,
 		Complete,
 		Error
@@ -50,15 +49,15 @@ public:
 	virtual ~CUploadManager();
 
 private:
+  CSiaDriveConfig* _siaDriveConfig;
 	SQLite::Database _uploadDatabase;
 	std::mutex _uploadMutex;
-	SString _activeSiaPath;
 
 private:
-	void HandleFileRemove(const CSiaCurl& siaCurl, const SString& siaPath, const SString& siaDriveFilePath);
-	bool CreateSiaDriveFile(const SString& siaPath, const SString& filePath, const SString& tempSourcePath, const SString& siaDriveFilePath);
+  CSiaDriveConfig* GetSiaDriveConfig() const { return _siaDriveConfig; }
+
+	bool HandleFileRemove(const CSiaCurl& siaCurl, const SString& siaPath);
 	void DeleteFilesRemovedFromSia(const CSiaCurl& siaCurl, CSiaDriveConfig* siaDriveConfig, const bool& isStartup = false);
-  void RemoveFileFromSia(const CSiaCurl& siaCurl, const SString& siaPath, FilePath removeFilePath);
 
 protected:
 	virtual void AutoThreadCallback(const CSiaCurl& siaCurl, CSiaDriveConfig* siaDriveConfig) override;
@@ -77,48 +76,13 @@ typedef CUploadManager::_UploadErrorCode UploadErrorCode;
 typedef CSiaError<CUploadManager::_UploadErrorCode> UploadError;
 
 // Event Notifications
-class CreatingTemporarySiaDriveFile :
-	public CEvent
-{
-public:
-	CreatingTemporarySiaDriveFile(const SString& siaPath, const SString& filePath, const SString& tempSourcePath) :
-		_siaPath(siaPath),
-		_filePath(filePath),
-		_tempSourcePath(tempSourcePath)
-	{
-
-	}
-
-public:
-	virtual ~CreatingTemporarySiaDriveFile()
-	{
-	}
-
-private:
-	const SString _siaPath;
-	const SString _filePath;
-	const SString _tempSourcePath;
-
-public:
-	virtual SString GetSingleLineMessage() const override
-	{
-		return L"CreatingTemporarySiaDriveFile|SP|" + _siaPath + L"|FP|" + _filePath + L"|TSP|" + _tempSourcePath;
-	}
-
-	virtual std::shared_ptr<CEvent> Clone() const override
-	{
-		return std::shared_ptr<CEvent>(new CreatingTemporarySiaDriveFile(_siaPath, _filePath, _tempSourcePath));
-	}
-};
-
 class FileAddedToQueue :
 	public CEvent
 {
 public:
-  FileAddedToQueue(const SString& siaPath, const SString& filePath, const SString& siaDriveFilePath) :
+  FileAddedToQueue(const SString& siaPath, const SString& filePath) :
 		_siaPath(siaPath),
-		_filePath(filePath),
-    _siaDriveFilePath(siaDriveFilePath)
+		_filePath(filePath)
 	{
 
 	}
@@ -131,17 +95,16 @@ public:
 private:
 	const SString _siaPath;
 	const SString _filePath;
-  const SString _siaDriveFilePath;
 
 public:
 	virtual SString GetSingleLineMessage() const override
 	{
-		return L"FileAddedToQueue|SP|" + _siaPath + L"|FP|" + _filePath + "|SFP|" + _siaDriveFilePath;
+    return L"FileAddedToQueue|SP|" + _siaPath + L"|FP|" + _filePath;
 	}
 
 	virtual std::shared_ptr<CEvent> Clone() const override
 	{
-		return std::shared_ptr<CEvent>(new FileAddedToQueue(_siaPath, _filePath, _siaDriveFilePath));
+		return std::shared_ptr<CEvent>(new FileAddedToQueue(_siaPath, _filePath));
 	}
 };
 
@@ -177,38 +140,6 @@ public:
 	}
 };
 
-class ModifiedUploadQueued :
-	public CEvent
-{
-public:
-	ModifiedUploadQueued(const SString& siaPath, const SString& filePath) :
-		_siaPath(siaPath),
-		_filePath(filePath)
-	{
-
-	}
-
-public:
-	virtual ~ModifiedUploadQueued()
-	{
-	}
-
-private:
-	const SString _siaPath;
-	const SString _filePath;
-
-public:
-	virtual SString GetSingleLineMessage() const override
-	{
-		return L"ModifiedUploadQueued|SP|" + _siaPath + L"|FP|" + _filePath;
-	}
-
-	virtual std::shared_ptr<CEvent> Clone() const override
-	{
-		return std::shared_ptr<CEvent>(new ModifiedUploadQueued(_siaPath, _filePath));
-	}
-};
-
 class UploadToSiaStarted :
 	public CEvent
 {
@@ -241,11 +172,11 @@ public:
 	}
 };
 
-class UploadComplete :
+class UploadToSiaComplete :
 	public CEvent
 {
 public:
-	UploadComplete(const SString& siaPath, const SString& filePath) :
+  UploadToSiaComplete(const SString& siaPath, const SString& filePath) :
 		_siaPath(siaPath),
 		_filePath(filePath)
 	{
@@ -253,7 +184,7 @@ public:
 	}
 
 public:
-	virtual ~UploadComplete()
+	virtual ~UploadToSiaComplete()
 	{
 	}
 
@@ -264,20 +195,20 @@ private:
 public:
 	virtual SString GetSingleLineMessage() const override
 	{
-		return L"UploadComplete|SP|" + _siaPath + L"|FP|" + _filePath;
+		return L"UploadToSiaComplete|SP|" + _siaPath + L"|FP|" + _filePath;
 	}
 
 	virtual std::shared_ptr<CEvent> Clone() const override
 	{
-		return std::shared_ptr<CEvent>(new UploadComplete(_siaPath, _filePath));
+		return std::shared_ptr<CEvent>(new UploadToSiaComplete(_siaPath, _filePath));
 	}
 };
 
-class FileRemoved :
+class FileRemovedFromSia :
 	public CEvent
 {
 public:
-	FileRemoved(const SString& siaPath, const SString& filePath) :
+  FileRemovedFromSia(const SString& siaPath, const SString& filePath) :
 		_siaPath(siaPath),
 		_filePath(filePath)
 	{
@@ -285,7 +216,7 @@ public:
 	}
 
 public:
-	virtual ~FileRemoved()
+	virtual ~FileRemovedFromSia()
 	{
 	}
 
@@ -296,84 +227,20 @@ private:
 public:
 	virtual SString GetSingleLineMessage() const override
 	{
-		return L"FileRemoved|SP|" + _siaPath + L"|FP|" + _filePath;
+		return L"FileRemovedFromSia|SP|" + _siaPath + L"|FP|" + _filePath;
 	}
 
 	virtual std::shared_ptr<CEvent> Clone() const override
 	{
-		return std::shared_ptr<CEvent>(new FileRemoved(_siaPath, _filePath));
+		return std::shared_ptr<CEvent>(new FileRemovedFromSia(_siaPath, _filePath));
 	}
 };
 
-class UploadStatusSetToModified :
+class FailedToRemoveFileFromSia :
 	public CEvent
 {
 public:
-	UploadStatusSetToModified(const SString& siaPath, const SString& filePath) :
-		_siaPath(siaPath),
-		_filePath(filePath)
-	{
-
-	}
-
-public:
-	virtual ~UploadStatusSetToModified()
-	{
-	}
-
-private:
-	const SString _siaPath;
-	const SString _filePath;
-
-public:
-	virtual SString GetSingleLineMessage() const override
-	{
-		return L"UploadStatusSetToModified|SP|" + _siaPath + L"|FP|" + _filePath;
-	}
-
-	virtual std::shared_ptr<CEvent> Clone() const override
-	{
-		return std::shared_ptr<CEvent>(new UploadStatusSetToModified(_siaPath, _filePath));
-	}
-};
-
-class UploadStatusSetToRemoved :
-	public CEvent
-{
-public:
-	UploadStatusSetToRemoved(const SString& siaPath, const SString& filePath) :
-		_siaPath(siaPath),
-		_filePath(filePath)
-	{
-
-	}
-
-public:
-	virtual ~UploadStatusSetToRemoved()
-	{
-	}
-
-private:
-	const SString _siaPath;
-	const SString _filePath;
-
-public:
-	virtual SString GetSingleLineMessage() const override
-	{
-		return L"UploadStatusSetToRemoved|SP|" + _siaPath + L"|FP|" + _filePath;
-	}
-
-	virtual std::shared_ptr<CEvent> Clone() const override
-	{
-		return std::shared_ptr<CEvent>(new UploadStatusSetToRemoved(_siaPath, _filePath));
-	}
-};
-
-class FailedToDeleteFromSia :
-	public CEvent
-{
-public:
-	FailedToDeleteFromSia(const SString& siaPath, const SString& filePath, const SiaCurlError& curlError) :
+  FailedToRemoveFileFromSia(const SString& siaPath, const SString& filePath, const SiaCurlError& curlError) :
 		_siaPath(siaPath),
 		_filePath(filePath),
 		_curlError(curlError)
@@ -382,7 +249,7 @@ public:
 	}
 
 public:
-	virtual ~FailedToDeleteFromSia()
+	virtual ~FailedToRemoveFileFromSia()
 	{
 	}
 
@@ -394,12 +261,12 @@ private:
 public:
 	virtual SString GetSingleLineMessage() const override
 	{
-		return L"FailedToDeleteFromSia|SP|" + _siaPath + L"|FP|" + _filePath;
+		return L"FailedToRemoveFileFromSia|SP|" + _siaPath + L"|FP|" + _filePath;
 	}
 
 	virtual std::shared_ptr<CEvent> Clone() const override
 	{
-		return std::shared_ptr<CEvent>(new FailedToDeleteFromSia(_siaPath, _filePath, _curlError));
+		return std::shared_ptr<CEvent>(new FailedToRemoveFileFromSia(_siaPath, _filePath, _curlError));
 	}
 };
 
@@ -436,180 +303,6 @@ public:
 	virtual std::shared_ptr<CEvent> Clone() const override
 	{
 		return std::shared_ptr<CEvent>(new ModifyUploadStatusFailed(_siaPath, _filePath, _uploadStatus, _errorMsg));
-	}
-};
-
-class CreatingTemporarySiaDriveFileFailed :
-	public CEvent
-{
-public:
-	CreatingTemporarySiaDriveFileFailed(const SString& siaPath, const SString& filePath, const SString& tempSourcePath) :
-		_siaPath(siaPath),
-		_filePath(filePath),
-		_tempSourcePath(tempSourcePath)
-	{
-
-	}
-
-public:
-	virtual ~CreatingTemporarySiaDriveFileFailed()
-	{
-	}
-
-private:
-	const SString _siaPath;
-	const SString _filePath;
-	const SString _tempSourcePath;
-
-public:
-	virtual SString GetSingleLineMessage() const override
-	{
-		return L"CreatingTemporarySiaDriveFileFailed|SP|" + _siaPath + L"|FP|" + _filePath + L"|TSP|" + _tempSourcePath;
-	}
-
-	virtual std::shared_ptr<CEvent> Clone() const override
-	{
-		return std::shared_ptr<CEvent>(new CreatingTemporarySiaDriveFileFailed(_siaPath, _filePath, _tempSourcePath));
-	}
-};
-
-class DeleteSiaDriveFileFailed :
-	public CEvent
-{
-public:
-	DeleteSiaDriveFileFailed(const SString& siaPath, const SString& filePath, const SString& siaDriveFilePath) :
-		_siaPath(siaPath),
-		_filePath(filePath),
-		_siaDriveFilePath(siaDriveFilePath)
-	{
-
-	}
-
-public:
-	virtual ~DeleteSiaDriveFileFailed()
-	{
-	}
-
-private:
-	const SString _siaPath;
-	const SString _filePath;
-	const SString _siaDriveFilePath;
-
-public:
-	virtual SString GetSingleLineMessage() const override
-	{
-		return L"DeleteSiaDriveFileFailed|SP|" + _siaPath + L"|FP|" + _filePath + L"|SDP|" + _siaDriveFilePath;
-	}
-
-	virtual std::shared_ptr<CEvent> Clone() const override
-	{
-		return std::shared_ptr<CEvent>(new DeleteSiaDriveFileFailed(_siaPath, _filePath, _siaDriveFilePath));
-	}
-};
-
-class DeleteTemporarySiaDriveFileFailed :
-	public CEvent
-{
-public:
-	DeleteTemporarySiaDriveFileFailed(const SString& siaPath, const SString& filePath, const SString& tempSourcePath) :
-		_siaPath(siaPath),
-		_filePath(filePath),
-		_tempSourcePath(tempSourcePath)
-	{
-
-	}
-
-public:
-	virtual ~DeleteTemporarySiaDriveFileFailed()
-	{
-	}
-
-private:
-	const SString _siaPath;
-	const SString _filePath;
-	const SString _tempSourcePath;
-
-public:
-	virtual SString GetSingleLineMessage() const override
-	{
-		return L"DeleteTemporarySiaDriveFileFailed|SP|" + _siaPath + L"|FP|" + _filePath + L"|TSP|" + _tempSourcePath;
-	}
-
-	virtual std::shared_ptr<CEvent> Clone() const override
-	{
-		return std::shared_ptr<CEvent>(new DeleteTemporarySiaDriveFileFailed(_siaPath, _filePath, _tempSourcePath));
-	}
-};
-
-class RenamingTemporarySiaDriveFile :
-	public CEvent
-{
-public:
-	RenamingTemporarySiaDriveFile(const SString& siaPath, const SString& filePath, const SString& tempSourcePath, const SString& siaDriveFilePath) :
-		_siaPath(siaPath),
-		_filePath(filePath),
-		_tempSourcePath(tempSourcePath),
-		_siaDriveFilePath(siaDriveFilePath)
-	{
-
-	}
-
-public:
-	virtual ~RenamingTemporarySiaDriveFile()
-	{
-	}
-
-private:
-	const SString _siaPath;
-	const SString _filePath;
-	const SString _tempSourcePath;
-	const SString _siaDriveFilePath;
-
-public:
-	virtual SString GetSingleLineMessage() const override
-	{
-		return L"RenamingTemporarySiaDriveFile|SP|" + _siaPath + L"|FP|" + _filePath + L"|TSP|" + _tempSourcePath + L"|SDP|" + _siaDriveFilePath;
-	}
-
-	virtual std::shared_ptr<CEvent> Clone() const override
-	{
-		return std::shared_ptr<CEvent>(new RenamingTemporarySiaDriveFile(_siaPath, _filePath, _tempSourcePath, _siaDriveFilePath));
-	}
-};
-
-class RenamingTemporarySiaDriveFileFailed :
-	public CEvent
-{
-public:
-	RenamingTemporarySiaDriveFileFailed(const SString& siaPath, const SString& filePath, const SString& tempSourcePath, const SString& siaDriveFilePath) :
-		_siaPath(siaPath),
-		_filePath(filePath),
-		_tempSourcePath(tempSourcePath),
-		_siaDriveFilePath(siaDriveFilePath)
-	{
-
-	}
-
-public:
-	virtual ~RenamingTemporarySiaDriveFileFailed()
-	{
-	}
-
-private:
-	const SString _siaPath;
-	const SString _filePath;
-	const SString _tempSourcePath;
-	const SString _siaDriveFilePath;
-
-public:
-	virtual SString GetSingleLineMessage() const override
-	{
-		return L"RenamingTemporarySiaDriveFileFailed|SP|" + _siaPath + L"|FP|" + _filePath + L"|TSP|" + _tempSourcePath + L"|SDP|" + _siaDriveFilePath;
-	}
-
-	virtual std::shared_ptr<CEvent> Clone() const override
-	{
-		return std::shared_ptr<CEvent>(new RenamingTemporarySiaDriveFileFailed(_siaPath, _filePath, _tempSourcePath, _siaDriveFilePath));
 	}
 };
 
@@ -678,72 +371,6 @@ public:
 	virtual std::shared_ptr<CEvent> Clone() const override
 	{
 		return std::shared_ptr<CEvent>(new DatabaseDeleteFailed(_siaPath, _filePath, _errorMessage));
-	}
-};
-
-class RemoveFileFailed :
-	public CEvent
-{
-public:
-	RemoveFileFailed(const SString& siaPath, const SString& filePath) :
-		_siaPath(siaPath),
-		_filePath(filePath)
-	{
-
-	}
-
-public:
-	virtual ~RemoveFileFailed()
-	{
-	}
-
-private:
-	const SString _siaPath;
-	const SString _filePath;
-
-public:
-	virtual SString GetSingleLineMessage() const override
-	{
-		return L"RemoveFileFailed|SP|" + _siaPath + L"|FP|" + _filePath;
-	}
-
-	virtual std::shared_ptr<CEvent> Clone() const override
-	{
-		return std::shared_ptr<CEvent>(new RemoveFileFailed(_siaPath, _filePath));
-	}
-};
-
-class ExistingUploadFound :
-	public CEvent
-{
-public:
-	ExistingUploadFound(const SString& siaPath, const SString& filePath, const UploadStatus& uploadStatus) :
-		_siaPath(siaPath),
-		_filePath(filePath),
-		_uploadStatus(uploadStatus)
-	{
-
-	}
-
-public:
-	virtual ~ExistingUploadFound()
-	{
-	}
-
-private:
-	const SString _siaPath;
-	const SString _filePath;
-	const UploadStatus _uploadStatus;
-
-public:
-	virtual SString GetSingleLineMessage() const override
-	{
-		return L"ExistingUploadFound|SP|" + _siaPath + L"|FP|" + _filePath + L"|ST|" + CUploadManager::UploadStatusToString(_uploadStatus);
-	}
-
-	virtual std::shared_ptr<CEvent> Clone() const override
-	{
-		return std::shared_ptr<CEvent>(new ExistingUploadFound(_siaPath, _filePath, _uploadStatus));
 	}
 };
 

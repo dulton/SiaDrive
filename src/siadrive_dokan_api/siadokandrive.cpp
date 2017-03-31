@@ -7,6 +7,15 @@
 using namespace Sia::Api;
 using namespace Sia::Api::Dokan;
 
+static __int64 FileSize(const wchar_t* name)
+{
+  struct _stat64 buf;
+  if (_wstat64(name, &buf) != 0)
+    return -1; // error, could use errno to find out more
+
+  return buf.st_size;
+}
+
 // TODO Handle paths greater than MAX_PATH!!
 
 // The general idea is that normal file I/O occurs in a local cache folder and once the file is closed, it is scheduled for upload into Sia.
@@ -54,22 +63,56 @@ private:
     return ret;
 	}
 
-  static bool AddFileToCache(const SString& siaPath)
+  static bool AddFileToCache(const SString& siaPath, PDOKAN_FILE_INFO dokanFileInfo)
   {
-    FilePath tempFilePath = FilePath::GetTempDirectory();
-    tempFilePath.Append(GenerateSha256(siaPath) + ".siatmp");
+    bool active = true;
+    bool ret = false;
 
-    // TODO Check cache size is large enough to hold new file
-    bool ret = ApiSuccess(_siaApi->GetRenter()->DownloadFile(siaPath, tempFilePath));
-    if (ret)
-    {
-      FilePath src(tempFilePath);
-      FilePath dest(GetCacheLocation(), siaPath);
-      ret = src.MoveFile(dest);
-      if (!ret)
+    std::thread th([&] {
+      FilePath tempFilePath = FilePath::GetTempDirectory();
+      tempFilePath.Append(GenerateSha256(siaPath) + ".siatmp");
+
+      // TODO Check cache size is large enough to hold new file
+      ret = ApiSuccess(_siaApi->GetRenter()->DownloadFile(siaPath, tempFilePath));
+      if (ret)
       {
-        src.DeleteFile();
+        auto id = dokanFileInfo->Context;
+        ::CloseHandle(reinterpret_cast<HANDLE>(id));
+
+        FilePath src(tempFilePath);
+        FilePath dest(GetCacheLocation(), siaPath);
+        ret = dest.DeleteFile() && src.MoveFile(dest);
+        if (ret)
+        {
+          HANDLE handle = ::CreateFile(&dest[0], GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+
+          std::lock_guard<std::mutex> l(_dokanMutex);
+          auto ofi = _openFileMap[id];
+          _openFileMap.erase(id);
+          if (handle == INVALID_HANDLE_VALUE)
+          {
+            ret = false;
+          }
+          else
+          {
+            ofi.Dummy = false;
+            dokanFileInfo->Context = reinterpret_cast<ULONG64>(handle);
+            _openFileMap.insert({ dokanFileInfo->Context, ofi });
+          }
+        }
+        else
+        {
+          src.DeleteFile();
+        }
       }
+      active = false;
+    });
+    th.detach();
+
+    while (active)
+    {
+      DokanResetTimeout(30000, dokanFileInfo);
+      ::Sleep(10);
     }
 
     return ret;
@@ -270,10 +313,10 @@ private:
 					}
 					else
 					{
-						bool exists;
-						if (ApiSuccess(_siaApi->GetRenter()->FileExists(siaPath, exists)))
+						bool siaExists;
+						if (ApiSuccess(_siaApi->GetRenter()->FileExists(siaPath, siaExists)))
 						{
-              exists = exists || cacheFilePath.IsFile();
+              bool exists = siaExists || cacheFilePath.IsFile();
 						  // Operations on existing files that are requested to be truncated, overwritten or re-created
 							//	will first be deleted and then replaced if, after the file operation is done, the resulting file
 							//	size is > 0. Sia doesn't support random access to files (upload/download/rename/delete).
@@ -359,11 +402,13 @@ private:
                 bool isDummy = false;
 								if (ret == STATUS_SUCCESS)
 								{
-									// If file must exist, then check for it in cache location. If not found,
-									//	it must be downloaded first and placed in cache
-									if (!isCreateOp && !cacheFilePath.IsFile())
+									if (!isCreateOp)
 									{
-                    if (exists)
+                    if (cacheFilePath.IsFile())
+                    {
+                      isDummy = (siaExists && (FileSize(&cacheFilePath[0]) == 0));
+                    }
+                    else if (siaExists)
                     {
                       isDummy = AddDummyFileToCache(siaPath);
                       if (!isDummy)
@@ -441,7 +486,8 @@ private:
 		auto siaFileTree = GetFileTree();
 		if (siaFileTree)
 		{
-			SString siaFileQuery = CSiaApi::FormatToSiaPath(FilePath(fileName).SkipRoot());
+      SString siaFileQuery = CSiaApi::FormatToSiaPath(FilePath(fileName).SkipRoot());
+      SString siaRootPath = CSiaApi::FormatToSiaPath(FilePath(fileName).SkipRoot());
 			FilePath siaDirQuery = siaFileQuery;
       FilePath findFile = GetCacheLocation();
 			FilePath cachePath = GetCacheLocation();
@@ -484,17 +530,22 @@ private:
         {
           if ((wcscmp(fileName, L"\\") != 0) || (wcscmp(findData.cFileName, L".") != 0) && (wcscmp(findData.cFileName, L"..") != 0))
           {
-            if (!(SString(findData.cFileName).EndsWith(".siadrive") || SString(findData.cFileName).EndsWith(".siadrive.temp")))
+            if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
             {
-              if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-              {
-                dirs.insert({ findData.cFileName, 0 });
-              }
-              else
-              {
-                files.insert({ findData.cFileName, 1 });
-              }
+              dirs.insert({ findData.cFileName, 0 });
+            }
+            
+            bool exists;
+            if (!ApiSuccess(_siaApi->GetRenter()->FileExists(CSiaApi::FormatToSiaPath(FilePath(siaRootPath, findData.cFileName)), exists)))
+            {
+              ::FindClose(findHandle);
+              return STATUS_INVALID_DEVICE_STATE;
+            }
+
+            if (findData.nFileSizeHigh || findData.nFileSizeLow || !exists)
+            {
               fillFindData(&findData, dokanFileInfo);
+              files.insert({ findData.cFileName, 1 });
             }
           }
         } while (::FindNextFile(findHandle, &findData) != 0);
@@ -708,11 +759,31 @@ private:
 		LONGLONG offset,
 		PDOKAN_FILE_INFO dokanFileInfo) 
 	{
-    // TODO Check dummy and add to cache if not found
 		FilePath filePath(GetCacheLocation(), fileName);
     CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanReadFile(filePath)));
 
-		HANDLE handle = reinterpret_cast<HANDLE>(dokanFileInfo->Context);
+    bool isDummy = false;
+    SString siaPath;
+    {
+      std::lock_guard<std::mutex> l(_fileTreeMutex);
+      auto it = _openFileMap.find(dokanFileInfo->Context);
+      isDummy = ((it != _openFileMap.end()) && it->second.Dummy);
+      if (isDummy)
+      {
+        siaPath = _openFileMap[dokanFileInfo->Context].SiaPath;
+      }
+    }
+
+    if (isDummy)
+    {
+      // TODO taking too long
+      if (!AddFileToCache(siaPath, dokanFileInfo))
+      {
+        return STATUS_INVALID_DEVICE_STATE;
+      }
+    }
+
+    HANDLE handle = reinterpret_cast<HANDLE>(dokanFileInfo->Context);
 		BOOL opened = FALSE;
 		if (!handle || (handle == INVALID_HANDLE_VALUE))
 		{

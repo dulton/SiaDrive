@@ -393,6 +393,7 @@ void CSiaDriveApp::SiaApiRefreshCallback(CefRefPtr<CefV8Context> context, const 
 #else
       a
 #endif
+
       auto uiActions = global->GetValue("uiUpdate");
       auto renterActions = uiActions->GetValue("Renter");
       auto walletActions = uiActions->GetValue("Wallet");
@@ -421,6 +422,7 @@ void CSiaDriveApp::SiaApiRefreshCallback(CefRefPtr<CefV8Context> context, const 
       ExecuteSetter(context, renterActions, "setUsedFunds", SiaCurrencyToString(allocatedFunds - unspentFunds));
       ExecuteSetter(context, renterActions, "setAvailableFunds", SiaCurrencyToString(unspentFunds));
       ExecuteSetter(context, renterActions, "setHostCount", SString::FromUInt64(_siaApi->GetRenter()->GetHosts()));
+      global->GetValue("uiState")->SetValue("allocatedRenterFunds", CefV8Value::CreateString(SiaCurrencyToString(allocatedFunds).str()), V8_PROPERTY_ATTRIBUTE_NONE);
 
       // Space
       SiaCurrency totalUsedGb = _siaApi->GetRenter()->GetTotalUsedBytes() ? _siaApi->GetRenter()->GetTotalUsedBytes() / (1024.0 * 1024.0 * 1024.0) : 0.0;

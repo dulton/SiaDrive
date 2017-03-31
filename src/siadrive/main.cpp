@@ -8,8 +8,7 @@
 #include <eventsystem.h>
 #include <debugconsumer.h>
 #include <loggingconsumer.h>
-// 877 663 6321
-// 469 661 8806
+
 using namespace Sia;
 using namespace Sia::Api;
 
