@@ -1,0 +1,12 @@
+UI
+--
+1. Background not scaling properly
+2. Different window sizes between Win7,8,10
+3. Estimated storage is not accurate
+4. Estimated cost is not implemented
+
+Core
+-----
+1. Available/used space reported to windows is not implemented properly and will display only 512MB free
+2. Files not already downloaded may timeout and cause multiple downloads to occur
+3. Debug release will crash on app exit
