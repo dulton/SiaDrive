@@ -4,7 +4,7 @@ UI
 2. Different window sizes between Win7,8,10
 3. Estimated storage is not accurate
 4. Estimated cost is not implemented
-
+5. Background refresh is causing available drive list to continually be rebuilt and also change after mount
 Core
 -----
 1. Available/used space reported to windows is not implemented properly and will display only 512MB free
