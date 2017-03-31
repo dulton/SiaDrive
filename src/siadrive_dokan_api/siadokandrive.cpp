@@ -27,7 +27,7 @@ class SIADRIVE_DOKAN_EXPORTABLE DokanImpl
 private:
 	typedef struct
 	{
-		FilePath SiaPath;
+		SString SiaPath;
     FilePath CacheFilePath;
     bool Dummy;
 		bool Changed;
