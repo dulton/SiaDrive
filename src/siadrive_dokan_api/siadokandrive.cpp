@@ -27,6 +27,7 @@ class SIADRIVE_DOKAN_EXPORTABLE DokanImpl
 private:
 	typedef struct
 	{
+    HANDLE FileHandle;
 		SString SiaPath;
     FilePath CacheFilePath;
     bool Dummy;
@@ -41,7 +42,6 @@ private:
 	static DOKAN_OPERATIONS _dokanOps;
 	static DOKAN_OPTIONS _dokanOptions;
 	static FilePath _cacheLocation;
-	static std::unordered_map<ULONG64, OpenFileInfo> _openFileMap;
 	static std::unique_ptr<std::thread> _fileListThread;
 	static HANDLE _fileListStopEvent;
 	static CSiaFileTreePtr _siaFileTree;
@@ -63,41 +63,35 @@ private:
     return ret;
 	}
 
-  static bool AddFileToCache(const SString& siaPath, PDOKAN_FILE_INFO dokanFileInfo)
+  static bool AddFileToCache(OpenFileInfo& openFileInfo, PDOKAN_FILE_INFO dokanFileInfo)
   {
     bool active = true;
     bool ret = false;
 
     std::thread th([&] {
       FilePath tempFilePath = FilePath::GetTempDirectory();
-      tempFilePath.Append(GenerateSha256(siaPath) + ".siatmp");
+      tempFilePath.Append(GenerateSha256(openFileInfo.SiaPath) + ".siatmp");
 
       // TODO Check cache size is large enough to hold new file
-      ret = ApiSuccess(_siaApi->GetRenter()->DownloadFile(siaPath, tempFilePath));
+      ret = ApiSuccess(_siaApi->GetRenter()->DownloadFile(openFileInfo.SiaPath, tempFilePath));
       if (ret)
       {
-        auto id = dokanFileInfo->Context;
-        ::CloseHandle(reinterpret_cast<HANDLE>(id));
+        ::CloseHandle(openFileInfo.FileHandle);
 
         FilePath src(tempFilePath);
-        FilePath dest(GetCacheLocation(), siaPath);
+        FilePath dest(GetCacheLocation(), openFileInfo.SiaPath);
         ret = dest.DeleteFile() && src.MoveFile(dest);
         if (ret)
         {
           HANDLE handle = ::CreateFile(&dest[0], GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-
-          std::lock_guard<std::mutex> l(_dokanMutex);
-          auto ofi = _openFileMap[id];
-          _openFileMap.erase(id);
           if (handle == INVALID_HANDLE_VALUE)
           {
             ret = false;
           }
           else
           {
-            ofi.Dummy = false;
-            dokanFileInfo->Context = reinterpret_cast<ULONG64>(handle);
-            _openFileMap.insert({ dokanFileInfo->Context, ofi });
+            openFileInfo.Dummy = false;
+            openFileInfo.FileHandle = handle;
           }
         }
         else
@@ -109,9 +103,9 @@ private:
     });
     th.detach();
 
+    DokanResetTimeout(1000 * 60 * 5, dokanFileInfo);
     while (active)
     {
-      DokanResetTimeout(30000, dokanFileInfo);
       ::Sleep(10);
     }
 
@@ -124,39 +118,33 @@ private:
       return dest.CreateEmptyFile();
   }
 
-  static void HandleSiaFileClose(const FilePath& filePath, const ULONG64 id, const std::uint64_t& fileSize, const bool& deleteOnClose)
+  static void HandleSiaFileClose(const OpenFileInfo& openFileInfo, const std::uint64_t& fileSize, const bool& deleteOnClose)
   {
-    std::lock_guard<std::mutex> l(_dokanMutex);
-    auto ofi = _openFileMap.find(id);
-    if (ofi != _openFileMap.end())
-    {
-      CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanCloseFile(ofi->second.CacheFilePath)));
+      CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanCloseFile(openFileInfo.CacheFilePath)));
       if (deleteOnClose)
       {
         // TODO Handle failure
-        _uploadManager->Remove(ofi->second.SiaPath);
+        _uploadManager->Remove(openFileInfo.SiaPath);
       }
       else
       {
-        QueueUploadIfChanged(id, fileSize);
+        QueueUploadIfChanged(openFileInfo, fileSize);
       }
-      _openFileMap.erase(id);
-    }
   }
 
-	static void QueueUploadIfChanged(const ULONG64& id, const std::uint64_t& size)
+	static void QueueUploadIfChanged(const OpenFileInfo& openFileInfo, const std::uint64_t& size)
 	{
-		if (_openFileMap[id].Changed)
+		if (openFileInfo.Changed)
 		{
 			if (size > 0)
 			{
 				// TODO Handle error return
-				_uploadManager->AddOrUpdate(_openFileMap[id].SiaPath, _openFileMap[id].CacheFilePath);
+				_uploadManager->AddOrUpdate(openFileInfo.SiaPath, openFileInfo.CacheFilePath);
 			}
 			else
 			{
 				// Treat 0 length files as deleted in Sia - cache retains 0-length
-				_uploadManager->Remove(_openFileMap[id].SiaPath);
+				_uploadManager->Remove(openFileInfo.SiaPath);
 			}
 		}
 	}
@@ -294,7 +282,12 @@ private:
             }
             else
             {
-              dokanFileInfo->Context = reinterpret_cast<ULONG64>(handle); // save the file handle in Context
+              OpenFileInfo* ofi = new OpenFileInfo();
+              ofi->CacheFilePath = cacheFilePath;
+              ofi->Dummy = false;
+              ofi->Changed = false;
+              ofi->FileHandle = handle;
+              dokanFileInfo->Context = reinterpret_cast<ULONG64>(ofi);
             }
           }
 				}
@@ -439,7 +432,6 @@ private:
 										}
 										else
 										{
-											dokanFileInfo->Context = reinterpret_cast<ULONG64>(handle); // save the file handle in Context
                       if ((creationDisposition == OPEN_ALWAYS) || (creationDisposition == CREATE_ALWAYS))
                       {
                         DWORD error = GetLastError();
@@ -449,14 +441,14 @@ private:
                         }
                       }
 
-											OpenFileInfo ofi;
-											ofi.SiaPath = siaPath;
-											ofi.CacheFilePath = cacheFilePath;
+											OpenFileInfo* ofi = new OpenFileInfo();
+											ofi->SiaPath = siaPath;
+											ofi->CacheFilePath = cacheFilePath;
 											// TODO Detect if file is read-only
-                      ofi.Dummy = isDummy;
-                      ofi.Changed = false;
-                      std::lock_guard<std::mutex> l(_dokanMutex);
-											_openFileMap.insert({ dokanFileInfo->Context, ofi });
+                      ofi->Dummy = isDummy;
+                      ofi->Changed = false;
+                      ofi->FileHandle = handle;
+											dokanFileInfo->Context = reinterpret_cast<ULONG64>(ofi);
 										}
 									}
 								}
@@ -601,22 +593,22 @@ private:
     FilePath filePath(GetCacheLocation(), fileName);
     if (dokanFileInfo->Context) 
     {
-      auto id = dokanFileInfo->Context;
-      HANDLE handle = reinterpret_cast<HANDLE>(id);
+      auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
       if (!dokanFileInfo->IsDirectory)
       {
         LARGE_INTEGER li = { 0 };
-        ::GetFileSizeEx(handle, &li);
-        HandleSiaFileClose(filePath, id, li.QuadPart, dokanFileInfo->DeleteOnClose ? true : false);
+        ::GetFileSizeEx(openFileInfo->FileHandle, &li);
+        HandleSiaFileClose(*openFileInfo, li.QuadPart, dokanFileInfo->DeleteOnClose ? true : false);
       }
-      ::CloseHandle(reinterpret_cast<HANDLE>(dokanFileInfo->Context));
+      ::CloseHandle(openFileInfo->FileHandle);
+      delete openFileInfo;
       dokanFileInfo->Context = 0;
     }
 	}
 
 	static NTSTATUS DOKAN_CALLBACK Sia_GetFileInformation(LPCWSTR fileName, LPBY_HANDLE_FILE_INFORMATION handleFileInfo, PDOKAN_FILE_INFO dokanFileInfo) 
 	{
-		HANDLE handle = reinterpret_cast<HANDLE>(dokanFileInfo->Context);
+		auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
 		BOOL opened = FALSE;
 		NTSTATUS ret = STATUS_SUCCESS;
 
@@ -627,10 +619,11 @@ private:
     auto siaFile = siaFileTree ? siaFileTree->GetFile(siaPath) : nullptr;
     CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanGetFileInformation(cachePath)));
 
-	  if (!siaFile && (!handle || (handle == INVALID_HANDLE_VALUE)))
+    HANDLE tempHandle = openFileInfo->FileHandle;
+	  if (!siaFile && (!openFileInfo->FileHandle || (openFileInfo->FileHandle == INVALID_HANDLE_VALUE)))
 		{
-			handle = ::CreateFile(&cachePath[0], GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-			if (handle == INVALID_HANDLE_VALUE) 
+      tempHandle = ::CreateFile(&cachePath[0], GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+			if (tempHandle == INVALID_HANDLE_VALUE)
 			{
 				ret = DokanNtStatusFromWin32(::GetLastError());
 			}
@@ -642,14 +635,7 @@ private:
 
 		if (ret == STATUS_SUCCESS)
 		{
-      bool isDummy = false;
-      if (siaFile)
-      {
-        std::lock_guard<std::mutex> l(_fileTreeMutex);
-        isDummy = _openFileMap.find(dokanFileInfo->Context) != _openFileMap.end();
-      }
-
-      if (isDummy)
+      if (openFileInfo->Dummy)
       {
         LARGE_INTEGER li = { 0 };
         li.QuadPart = siaFile->GetFileSize();
@@ -658,7 +644,7 @@ private:
         handleFileInfo->nFileSizeLow = li.LowPart;
         ret = STATUS_SUCCESS;
       } 
-		  else if (!::GetFileInformationByHandle(handle, handleFileInfo))
+		  else if (!::GetFileInformationByHandle(tempHandle, handleFileInfo))
 			{
 				// fileName is a root directory
 				// in this case, FindFirstFile can't get directory information
@@ -692,7 +678,7 @@ private:
 
 		if (opened)
 		{
-			::CloseHandle(handle);
+			::CloseHandle(tempHandle);
 		}
 
 		return ret;
@@ -761,35 +747,24 @@ private:
 	{
 		FilePath filePath(GetCacheLocation(), fileName);
     CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanReadFile(filePath)));
+    auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
 
-    bool isDummy = false;
-    SString siaPath;
-    {
-      std::lock_guard<std::mutex> l(_fileTreeMutex);
-      auto it = _openFileMap.find(dokanFileInfo->Context);
-      isDummy = ((it != _openFileMap.end()) && it->second.Dummy);
-      if (isDummy)
-      {
-        siaPath = _openFileMap[dokanFileInfo->Context].SiaPath;
-      }
-    }
-
-    if (isDummy)
+    if (openFileInfo && openFileInfo->Dummy)
     {
       // TODO taking too long
-      if (!AddFileToCache(siaPath, dokanFileInfo))
+      if (!AddFileToCache(*openFileInfo, dokanFileInfo))
       {
         return STATUS_INVALID_DEVICE_STATE;
       }
     }
 
-    HANDLE handle = reinterpret_cast<HANDLE>(dokanFileInfo->Context);
+    HANDLE tempHandle = openFileInfo ? openFileInfo->FileHandle : 0;
 		BOOL opened = FALSE;
-		if (!handle || (handle == INVALID_HANDLE_VALUE))
+		if (!tempHandle || (tempHandle == INVALID_HANDLE_VALUE))
 		{
       // TODO Need to add to cache if missing
-			handle = ::CreateFile(&filePath[0], GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-			if (handle == INVALID_HANDLE_VALUE) 
+      tempHandle = ::CreateFile(&filePath[0], GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+			if (tempHandle == INVALID_HANDLE_VALUE)
 			{
 				DWORD error = GetLastError();
 				return DokanNtStatusFromWin32(error);
@@ -799,24 +774,24 @@ private:
 
 		LARGE_INTEGER distanceToMove;
 		distanceToMove.QuadPart = offset;
-		if (!::SetFilePointerEx(handle, distanceToMove, nullptr, FILE_BEGIN)) 
+		if (!::SetFilePointerEx(tempHandle, distanceToMove, nullptr, FILE_BEGIN))
 		{
 			DWORD error = GetLastError();
 			if (opened)
-				CloseHandle(handle);
+				CloseHandle(tempHandle);
 			return DokanNtStatusFromWin32(error);
 		}
 
-		if (!::ReadFile(handle, buffer, bufferLen, readLength, nullptr)) 
+		if (!::ReadFile(tempHandle, buffer, bufferLen, readLength, nullptr))
 		{
 			DWORD error = GetLastError();
 			if (opened)
-				CloseHandle(handle);
+				CloseHandle(tempHandle);
 			return DokanNtStatusFromWin32(error);
 		}
 
 		if (opened)
-			CloseHandle(handle);
+			CloseHandle(tempHandle);
 
 		return STATUS_SUCCESS;
 	}
@@ -830,15 +805,14 @@ private:
     // TODO Check dummy and add to cache if not found
 		FilePath filePath(GetCacheLocation(), fileName);
     CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanWriteFile(filePath)));
+    auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
 
-		HANDLE handle = reinterpret_cast<HANDLE>(dokanFileInfo->Context);
 		BOOL opened = FALSE;
-
-		// reopen the file
-		if (!handle || (handle == INVALID_HANDLE_VALUE))
+    HANDLE tempHandle = openFileInfo ? openFileInfo->FileHandle : 0;
+		if (!tempHandle || (tempHandle == INVALID_HANDLE_VALUE))
 		{
-			handle = ::CreateFile(&filePath[0], GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
-			if (handle == INVALID_HANDLE_VALUE) 
+      tempHandle = ::CreateFile(&filePath[0], GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+			if (tempHandle == INVALID_HANDLE_VALUE)
 			{
 				DWORD error = GetLastError();
 				return DokanNtStatusFromWin32(error);
@@ -847,11 +821,11 @@ private:
 		}
 
     LARGE_INTEGER li = { 0 };
-		if (!::GetFileSizeEx(handle, &li)) 
+		if (!::GetFileSizeEx(tempHandle, &li))
 		{
 			DWORD error = GetLastError();
 			if (opened)
-				CloseHandle(handle);
+				CloseHandle(tempHandle);
 			return DokanNtStatusFromWin32(error);
 		}
 
@@ -859,11 +833,11 @@ private:
 		if (dokanFileInfo->WriteToEndOfFile) 
 		{
 			LARGE_INTEGER z = {0};
-			if (!::SetFilePointerEx(handle, z, nullptr, FILE_END)) 
+			if (!::SetFilePointerEx(tempHandle, z, nullptr, FILE_END))
 			{
 				DWORD error = GetLastError();
 				if (opened)
-					::CloseHandle(handle);
+					::CloseHandle(tempHandle);
 				return DokanNtStatusFromWin32(error);
 			}
 		}
@@ -876,7 +850,7 @@ private:
 				{
 					*bytesWritten = 0;
 					if (opened)
-						CloseHandle(handle);
+						CloseHandle(tempHandle);
 					return STATUS_SUCCESS;
 				}
 
@@ -903,31 +877,33 @@ private:
 			}
 
 			distanceToMove.QuadPart = offset;
-			if (!::SetFilePointerEx(handle, distanceToMove, nullptr, FILE_BEGIN)) 
+			if (!::SetFilePointerEx(tempHandle, distanceToMove, nullptr, FILE_BEGIN))
 			{
 				DWORD error = GetLastError();
 				if (opened)
-					CloseHandle(handle);
+					CloseHandle(tempHandle);
 				return DokanNtStatusFromWin32(error);
 			}
 		}
 
-		if (::WriteFile(handle, buffer, bytesToWrite, bytesWritten, nullptr)) 
+		if (::WriteFile(tempHandle, buffer, bytesToWrite, bytesWritten, nullptr))
 		{
-      std::lock_guard<std::mutex> l(GetMutex());
-      _openFileMap.at(reinterpret_cast<ULONG64>(handle)).Changed = true;
+      if (openFileInfo)
+        openFileInfo->Changed = true;
 		}
 		else 
     {
 			DWORD error = GetLastError();
 			if (opened)
-				CloseHandle(handle);
+				CloseHandle(tempHandle);
 			return DokanNtStatusFromWin32(error);
 		}
 
-		// close the file when it is reopene bxkjuoqoa'qq d
-		if (opened)
-			CloseHandle(handle);
+    if (opened)
+    {
+      // TODO HandleSiaFileClose
+      CloseHandle(tempHandle);
+    }
 
 		return STATUS_SUCCESS;
 	}
@@ -940,24 +916,24 @@ private:
     FilePath filePath(GetCacheLocation(), fileName);
     CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanSetEndOfFile(filePath)));
 
-		HANDLE handle = reinterpret_cast<HANDLE>(dokanFileInfo->Context);
-		if (!handle || (handle == INVALID_HANDLE_VALUE))
+    auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
+		if (!openFileInfo || !openFileInfo->FileHandle || (openFileInfo->FileHandle == INVALID_HANDLE_VALUE))
 		{
 			ret = STATUS_INVALID_HANDLE;
 		}
     else
     {
       LARGE_INTEGER sz = { 0 };
-      ::GetFileSizeEx(handle, &sz);
+      ::GetFileSizeEx(openFileInfo->FileHandle, &sz);
 
       LARGE_INTEGER offset;
       offset.QuadPart = byteOffset;
-      if (!::SetFilePointerEx(handle, offset, nullptr, FILE_BEGIN))
+      if (!::SetFilePointerEx(openFileInfo->FileHandle, offset, nullptr, FILE_BEGIN))
       {
         DWORD error = GetLastError();
         ret = DokanNtStatusFromWin32(error);
       }
-      else if (!::SetEndOfFile(handle))
+      else if (!::SetEndOfFile(openFileInfo->FileHandle))
       {
         DWORD error = GetLastError();
         ret = DokanNtStatusFromWin32(error);
@@ -965,8 +941,7 @@ private:
 
       if (ret == STATUS_SUCCESS)
       {
-        std::lock_guard<std::mutex> l(GetMutex());
-        _openFileMap.at(reinterpret_cast<ULONG64>(handle)).Changed = (offset.QuadPart != (sz.QuadPart - 1)) ;
+        openFileInfo->Changed = (offset.QuadPart != (sz.QuadPart - 1)) ;
       }
     }
 
@@ -976,18 +951,17 @@ private:
 	static void DOKAN_CALLBACK Sia_Cleanup(LPCWSTR fileName, PDOKAN_FILE_INFO dokanFileInfo) 
 	{
 		FilePath filePath(GetCacheLocation(), fileName);
-    ULONG64 id = dokanFileInfo->DeleteOnClose;
+    auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
 		if (dokanFileInfo->Context) 
 		{
-      HANDLE handle = reinterpret_cast<HANDLE>(dokanFileInfo->Context);
       if (!dokanFileInfo->IsDirectory)
       {
         LARGE_INTEGER li = { 0 };
-        ::GetFileSizeEx(handle, &li);
-        HandleSiaFileClose(filePath, dokanFileInfo->Context, li.QuadPart, dokanFileInfo->DeleteOnClose ? true : false);
+        ::GetFileSizeEx(openFileInfo->FileHandle, &li);
+        HandleSiaFileClose(*openFileInfo, li.QuadPart, dokanFileInfo->DeleteOnClose ? true : false);
       }
-
-			::CloseHandle(handle);
+			::CloseHandle(openFileInfo->FileHandle);
+      delete openFileInfo;
 			dokanFileInfo->Context = 0;
 		}
 
@@ -1022,13 +996,13 @@ private:
     FilePath filePath(GetCacheLocation(), fileName);
     CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanFlushFileBuffers(filePath)));
 
-		HANDLE handle = reinterpret_cast<HANDLE>(dokanFileInfo->Context);
-		if (!handle || (handle == INVALID_HANDLE_VALUE))
+    auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
+		if (!openFileInfo || !openFileInfo->FileHandle || (openFileInfo->FileHandle == INVALID_HANDLE_VALUE))
 		{
 			return STATUS_SUCCESS;
 		}
 
-		if (::FlushFileBuffers(handle)) 
+		if (::FlushFileBuffers(openFileInfo->FileHandle))
 		{
 			return STATUS_SUCCESS;
 		}
@@ -1085,7 +1059,7 @@ private:
     // TODO Check dummy and add to cache if not found
     NTSTATUS ret = STATUS_SUCCESS;
 
-    HANDLE handle = reinterpret_cast<HANDLE>(dokanFileInfo->Context);
+    auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
     FilePath filePath(GetCacheLocation(), fileName);
     CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanDeleteFileW(filePath)));
 
@@ -1094,11 +1068,11 @@ private:
     {
       ret = STATUS_ACCESS_DENIED;
     }
-    else if (handle && (handle != INVALID_HANDLE_VALUE)) 
+    else if (openFileInfo && openFileInfo->FileHandle && (openFileInfo->FileHandle != INVALID_HANDLE_VALUE)) 
     {
       FILE_DISPOSITION_INFO fdi;
       fdi.DeleteFile = dokanFileInfo->DeleteOnClose;
-      if (!::SetFileInformationByHandle(handle, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO)))
+      if (!::SetFileInformationByHandle(openFileInfo->FileHandle, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO)))
       {
         ret = DokanNtStatusFromWin32(GetLastError());
       }
@@ -1115,9 +1089,9 @@ private:
     FilePath filePath(GetCacheLocation(), fileName);
     FilePath newFilePath(GetCacheLocation(), NewFileName);
     CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanMoveFileW(filePath, newFilePath)));
-    
-	  HANDLE handle = reinterpret_cast<HANDLE>(dokanFileInfo->Context);
-    if (!handle || (handle == INVALID_HANDLE_VALUE))
+
+    auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
+    if (!openFileInfo || !openFileInfo->FileHandle || (openFileInfo->FileHandle == INVALID_HANDLE_VALUE))
     {
       ret = STATUS_INVALID_HANDLE;
     }
@@ -1137,7 +1111,7 @@ private:
 
         wcscpy_s(renameInfo->FileName, len + 1, &newFilePath[0]);
 
-        BOOL result = ::SetFileInformationByHandle(handle, FileRenameInfo, renameInfo, bufferSize);
+        BOOL result = ::SetFileInformationByHandle(openFileInfo->FileHandle, FileRenameInfo, renameInfo, bufferSize);
         free(renameInfo);
 
         if (!result)
@@ -1232,13 +1206,13 @@ private:
     FilePath filePath(GetCacheLocation(), fileName);
     CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanSetFileSecurityW(filePath)));
 
-    HANDLE handle = reinterpret_cast<HANDLE>(dokanFileInfo->Context);
-    if (!handle || (handle == INVALID_HANDLE_VALUE))
+    auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
+    if (!openFileInfo || !openFileInfo->FileHandle || (openFileInfo->FileHandle == INVALID_HANDLE_VALUE))
     {
       return STATUS_INVALID_HANDLE;
     }
 
-    if (!::SetUserObjectSecurity(handle, securityInfo, securityDescriptor))
+    if (!::SetUserObjectSecurity(openFileInfo->FileHandle, securityInfo, securityDescriptor))
     {
       int error = ::GetLastError();
       return DokanNtStatusFromWin32(error);
@@ -1254,13 +1228,13 @@ private:
     FilePath filePath(GetCacheLocation(), fileName);
     CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanSetFileTime(filePath)));
 
-    HANDLE handle = reinterpret_cast<HANDLE>(dokanFileInfo->Context);
-    if (!handle || (handle == INVALID_HANDLE_VALUE))
+    auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
+    if (!openFileInfo || !openFileInfo->FileHandle || (openFileInfo->FileHandle == INVALID_HANDLE_VALUE))
     {
       return STATUS_INVALID_HANDLE;
     }
 
-    if (!::SetFileTime(handle, creationTime, lastAccessTime, lastWriteTime)) 
+    if (!::SetFileTime(openFileInfo->FileHandle, creationTime, lastAccessTime, lastWriteTime)) 
     {
       DWORD error = GetLastError();
       return DokanNtStatusFromWin32(error);
@@ -1276,25 +1250,25 @@ private:
     FilePath filePath(GetCacheLocation(), fileName);
     CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanSetAllocationSize(filePath)));
 
-    HANDLE handle = reinterpret_cast<HANDLE>(dokanFileInfo->Context);
-    if (!handle || (handle == INVALID_HANDLE_VALUE))
+    auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
+    if (!openFileInfo || !openFileInfo->FileHandle || (openFileInfo->FileHandle == INVALID_HANDLE_VALUE))
     {
       ret = STATUS_INVALID_HANDLE;
     }
     else
     {
       LARGE_INTEGER fileSize = { 0 };
-      if (::GetFileSizeEx(handle, &fileSize))
+      if (::GetFileSizeEx(openFileInfo->FileHandle, &fileSize))
       {
         if (allocSize < fileSize.QuadPart)
         {
           fileSize.QuadPart = allocSize;
-          if (!::SetFilePointerEx(handle, fileSize, nullptr, FILE_BEGIN))
+          if (!::SetFilePointerEx(openFileInfo->FileHandle, fileSize, nullptr, FILE_BEGIN))
           {
             DWORD error = GetLastError();
             ret = DokanNtStatusFromWin32(error);
           }
-          else if (!::SetEndOfFile(handle))
+          else if (!::SetEndOfFile(openFileInfo->FileHandle))
           {
             DWORD error = GetLastError();
             ret = DokanNtStatusFromWin32(error);
@@ -1416,7 +1390,6 @@ HANDLE DokanImpl::_fileListStopEvent;
 CSiaFileTreePtr DokanImpl::_siaFileTree;
 std::mutex DokanImpl::_fileTreeMutex;
 std::unique_ptr<std::thread> DokanImpl::_fileListThread;
-std::unordered_map<ULONG64, DokanImpl::OpenFileInfo> DokanImpl::_openFileMap;
 std::unique_ptr<std::thread> DokanImpl::_mountThread;
 NTSTATUS DokanImpl::_mountStatus = STATUS_SUCCESS;
 SString DokanImpl::_mountPoint;
