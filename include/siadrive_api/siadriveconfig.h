@@ -18,7 +18,8 @@ public:
 	JProperty(std::string, Renter_UploadDbFilePath, public, private, _configDocument)
 	JProperty(std::string, TempFolder, public, private, _configDocument)
 	JProperty(std::string, CacheFolder, public, public, _configDocument)
-	JProperty(std::uint16_t, HostPort, public, public, _configDocument)
+  JProperty(std::uint16_t, HostPort, public, public, _configDocument)
+  JProperty(std::uint8_t, MaxUploadCount, public, public, _configDocument)
 	JProperty(std::string, HostNameOrIp, public, public, _configDocument)
 
 private:

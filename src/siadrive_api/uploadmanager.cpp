@@ -12,6 +12,7 @@ using namespace Sia::Api;
 #define UPLOAD_TABLE_COLUMNS L"id integer primary key autoincrement, sia_path text unique not null, file_path text unique not null, status integer not null"
 #define QUERY_STATUS "select * from upload_table where sia_path=@sia_path order by id desc limit 1;"
 #define QUERY_UPLOADS_BY_STATUS "select * from upload_table where status=@status order by id desc limit 1;"
+#define QUERY_UPLOAD_COUNT_BY_STATUS "select count(id) from upload_table where status=@status;"
 #define QUERY_UPLOADS_BY_SIA_PATH "select * from upload_table where sia_path=@sia_path order by id desc limit 1;"
 #define QUERY_UPLOADS_BY_SIA_PATH_AND_STATUS "select * from upload_table where sia_path=@sia_path and status=@status order by id desc limit 1;"
 #define UPDATE_STATUS "update upload_table set status=@status where sia_path=@sia_path;"
@@ -161,13 +162,13 @@ void CUploadManager::AutoThreadCallback(const CSiaCurl& siaCurl, CSiaDriveConfig
 		json result;
 		if (ApiSuccess(siaCurl.Get(L"/renter/files", result)))
 		{
+			fileTree->BuildTree(result);
+
 			// Lock here - if file is modified again before previously queued upload is complete, delete it and 
 			//	start again later
 			std::lock_guard<std::mutex> l(_uploadMutex);
 			SQLite::Statement query(_uploadDatabase, QUERY_UPLOADS_BY_STATUS);
 			query.bind("@status", static_cast<unsigned>(UploadStatus::Uploading));
-
-			fileTree->BuildTree(result);
 			if (query.executeStep())
 			{
 				SString siaPath = static_cast<const char*>(query.getColumn(query.getColumnIndex("sia_path")));
@@ -193,7 +194,9 @@ void CUploadManager::AutoThreadCallback(const CSiaCurl& siaCurl, CSiaDriveConfig
 				// Upload still active, don't process another file
 				else
 				{
-					processNext = false;
+          SQLite::Statement count(_uploadDatabase, QUERY_UPLOAD_COUNT_BY_STATUS);
+          count.bind("@status", static_cast<unsigned>(UploadStatus::Uploading));
+          processNext = (count.executeStep() && (count.getColumn(0).getInt64() < _siaDriveConfig->GetMaxUploadCount()));
 				}
 			}
 		}

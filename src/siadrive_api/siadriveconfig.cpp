@@ -37,6 +37,7 @@ void CSiaDriveConfig::LoadDefaults()
 
   SetHostNameOrIp("localhost");
   SetHostPort(9980);
+  SetMaxUploadCount(5);
 }
 
 void CSiaDriveConfig::Load( )
