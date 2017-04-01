@@ -19,7 +19,9 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
 {
   UNREFERENCED_PARAMETER(hPrevInstance);
   UNREFERENCED_PARAMETER(lpCmdLine);
+#ifdef _DEBUG
   CDebugConsumer debugConsumer;
+#endif
   CLoggingConsumer loggingConsumer;
 
   CEventSystem::EventSystem.Start();
@@ -34,16 +36,18 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
   }
   CefSettings settings;
   settings.no_sandbox = true;
-  settings.remote_debugging_port = 8080;
 #ifdef _DEBUG
+  settings.remote_debugging_port = 8080;
   settings.single_process = true;
+  settings.log_severity = LOGSEVERITY_VERBOSE;
+#else
+  settings.log_severity = LOGSEVERITY_DISABLE;
 #endif
   CefInitialize(mainArgs, settings, app, nullptr);
   
   CefRunMessageLoop();
-  CEventSystem::EventSystem.Stop();
-  
   CefShutdown();
+  CEventSystem::EventSystem.Stop();
 
   return 0;;
 }
