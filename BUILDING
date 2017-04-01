@@ -6,6 +6,8 @@ BUILD INSTRUCTIONS
 4. After building, you will find the entire release in 'dist\Debug' or 'dist\Release'
 5. Install https://github.com/dokan-dev/dokany/releases/download/v1.0.3/Dokan_x64.msi
 
+!!!IMPORTANT: CLONE THIS REPOSITORY IN A LOCATION WITH NO SPACES. CEF WILL FAIL TO BUILD IF SPACES ARE IN THE PATH!!!!
+
 NOTE: CEF takes several hours to build. This only happens once per release type (Debug/Release).
 
 Report any build issues and/or bugs to:
