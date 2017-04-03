@@ -274,7 +274,7 @@ private:
           else
           {
             // FILE_FLAG_BACKUP_SEMANTICS is required for opening directory handles
-            HANDLE handle = ::CreateFile(&cacheFilePath[0], genericDesiredAccess, shareAccess, &securityAttrib, OPEN_EXISTING, fileAttributesAndFlags | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+            HANDLE handle = ::CreateFile(&cacheFilePath[0], genericDesiredAccess, shareAccess, &securityAttrib, OPEN_EXISTING, fileAttributesAndFlags | FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
             if (handle == INVALID_HANDLE_VALUE)
             {
               DWORD error = GetLastError();
@@ -295,7 +295,7 @@ private:
 			else // File (cache and/or Sia operation)
 			{
 				// Formulate Sia path
-				SString siaPath = CSiaApi::FormatToSiaPath(FilePath(fileName).SkipRoot()); // Strip drive letter to get Sia path
+				SString siaPath = CSiaApi::FormatToSiaPath(fileName); // Strip drive letter to get Sia path
 				if (siaPath.Length())
 				{
 					// If cache file already exists and is a directory, requested file operation isn't valid
@@ -474,37 +474,36 @@ private:
 
 	static NTSTATUS DOKAN_CALLBACK Sia_FindFiles(LPCWSTR fileName, PFillFindData fillFindData, PDOKAN_FILE_INFO dokanFileInfo)
 	{
-    NTSTATUS ret = STATUS_SUCCESS;
+    NTSTATUS ret = STATUS_INVALID_SERVER_STATE;
 		auto siaFileTree = GetFileTree();
 		if (siaFileTree)
 		{
-      SString siaFileQuery = CSiaApi::FormatToSiaPath(FilePath(fileName).SkipRoot());
-      SString siaRootPath = CSiaApi::FormatToSiaPath(FilePath(fileName).SkipRoot());
+      SString siaFileQuery = CSiaApi::FormatToSiaPath(fileName);
+      SString siaRootPath = CSiaApi::FormatToSiaPath(fileName);
 			FilePath siaDirQuery = siaFileQuery;
       FilePath findFile = GetCacheLocation();
 			FilePath cachePath = GetCacheLocation();
 			if (FilePath::DirSep == fileName)
 			{
 				siaFileQuery += L"/*.*";
-        findFile.Append("*.*");
+        findFile.Append("*");
 			}
 			else
 			{
 				cachePath.Append(fileName);
         findFile.Append(fileName);
-				if (cachePath.IsDirectory())
+				if (dokanFileInfo->IsDirectory)
 				{
 					siaFileQuery += L"/*.*";
-          findFile.Append("*.*");
+          findFile.Append("*");
 				}
 				else
 				{
-					siaDirQuery = cachePath;
-					siaDirQuery = CSiaApi::FormatToSiaPath(siaDirQuery.RemoveFileName());
+          siaDirQuery = FilePath();
 				}
 			}
 
-      CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanFindFiles(cachePath, siaDirQuery, siaFileQuery, findFile)));
+      CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanFindFiles(cachePath, siaDirQuery, siaFileQuery, findFile, fileName)));
       
       WIN32_FIND_DATA findData = { 0 };
       HANDLE findHandle = ::FindFirstFile(&findFile[0], &findData);
@@ -525,62 +524,79 @@ private:
             if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
             {
               dirs.insert({ findData.cFileName, 0 });
-            }
-            
-            bool exists;
-            if (!ApiSuccess(_siaApi->GetRenter()->FileExists(CSiaApi::FormatToSiaPath(FilePath(siaRootPath, findData.cFileName)), exists)))
-            {
-              ::FindClose(findHandle);
-              return STATUS_INVALID_DEVICE_STATE;
-            }
-
-            if (findData.nFileSizeHigh || findData.nFileSizeLow || !exists)
-            {
               fillFindData(&findData, dokanFileInfo);
-              files.insert({ findData.cFileName, 1 });
+            }
+            else
+            {
+              bool exists;
+              if (!ApiSuccess(_siaApi->GetRenter()->FileExists(CSiaApi::FormatToSiaPath(FilePath(fileName, findData.cFileName)), exists)))
+              {
+                ::FindClose(findHandle);
+                return STATUS_INVALID_DEVICE_STATE;
+              }
+
+              if (findData.nFileSizeHigh || findData.nFileSizeLow || !exists)
+              {
+                fillFindData(&findData, dokanFileInfo);
+                files.insert({ findData.cFileName, 1 });
+              }
             }
           }
         } while (::FindNextFile(findHandle, &findData) != 0);
+
+        DWORD error = GetLastError();
         ::FindClose(findHandle);
 
-        // Find Sia directories
-        auto dirList = siaFileTree->QueryDirectories(siaDirQuery);
-        for (auto& dir : dirList)
+        if (error == ERROR_NO_MORE_FILES)
         {
-          if (dirs.find(dir) == dirs.end())
+          // Find Sia directories
+          if (!static_cast<SString>(siaDirQuery).IsNullOrEmpty())
           {
-            WIN32_FIND_DATA fd = { 0 };
-            wcscpy_s(fd.cFileName, dir.str().c_str());
-            fd.dwFileAttributes = FILE_ATTRIBUTE_DIRECTORY;
-            fillFindData(&fd, dokanFileInfo);
-
-            // Create cache sub-folder
-            FilePath subCachePath(cachePath, dir);
-            if (!subCachePath.IsDirectory())
+            auto dirList = siaFileTree->QueryDirectories(siaDirQuery);
+            for (auto& dir : dirList)
             {
-              subCachePath.CreateDirectory();
+              if (dirs.find(dir) == dirs.end())
+              {
+                // Create cache sub-folder
+                FilePath subCachePath(cachePath, dir);
+                if (!subCachePath.IsDirectory())
+                {
+                  subCachePath.CreateDirectory();
+                }
+
+                WIN32_FIND_DATA fd = { 0 };
+                wcscpy_s(fd.cFileName, dir.str().c_str());
+                fd.dwFileAttributes = FILE_ATTRIBUTE_DIRECTORY;
+                fillFindData(&fd, dokanFileInfo);
+              }
             }
           }
-        }
 
-        // Find Sia files
-        auto fileList = siaFileTree->Query(siaFileQuery);
-        for (auto& file : fileList)
-        {
-          FilePath fp = file->GetSiaPath();
-          fp.StripToFileName();
-          if (files.find(fp) == files.end())
+          // Find Sia files
+          auto fileList = siaFileTree->Query(siaFileQuery);
+          for (auto& file : fileList)
           {
-            WIN32_FIND_DATA fd = { 0 };
-            wcscpy_s(fd.cFileName, &fp[0]);
+            FilePath fp = file->GetSiaPath();
+            fp.StripToFileName();
+            if (files.find(fp) == files.end())
+            {
+              WIN32_FIND_DATA fd = { 0 };
+              wcscpy_s(fd.cFileName, &fp[0]);
 
-            LARGE_INTEGER li = { 0 };
-            li.QuadPart = file->GetFileSize();
-            fd.nFileSizeHigh = li.HighPart;
-            fd.nFileSizeLow = li.LowPart;
-            fd.dwFileAttributes = FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_NORMAL;
-            fillFindData(&fd, dokanFileInfo);
+              LARGE_INTEGER li = { 0 };
+              li.QuadPart = file->GetFileSize();
+              fd.nFileSizeHigh = li.HighPart;
+              fd.nFileSizeLow = li.LowPart;
+              fd.dwFileAttributes = FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_NORMAL;
+              fillFindData(&fd, dokanFileInfo);
+            }
           }
+
+          ret = STATUS_SUCCESS;
+        }
+        else
+        {
+          ret = DokanNtStatusFromWin32(error);
         }
       }
 		}
@@ -612,17 +628,13 @@ private:
 		BOOL opened = FALSE;
 		NTSTATUS ret = STATUS_SUCCESS;
 
-		FilePath cachePath(GetCacheLocation(), fileName);
-
-    SString siaPath = CSiaApi::FormatToSiaPath(FilePath(fileName).SkipRoot());
     auto siaFileTree = GetFileTree();
-    auto siaFile = siaFileTree ? siaFileTree->GetFile(siaPath) : nullptr;
-    CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanGetFileInformation(cachePath)));
+    auto siaFile = siaFileTree ? siaFileTree->GetFile(openFileInfo->SiaPath) : nullptr;
 
     HANDLE tempHandle = openFileInfo->FileHandle;
-	  if (!siaFile && (!openFileInfo->FileHandle || (openFileInfo->FileHandle == INVALID_HANDLE_VALUE)))
+	  if (!siaFile && (!tempHandle || (tempHandle == INVALID_HANDLE_VALUE)))
 		{
-      tempHandle = ::CreateFile(&cachePath[0], GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+      tempHandle = ::CreateFile(&openFileInfo->CacheFilePath[0], GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
 			if (tempHandle == INVALID_HANDLE_VALUE)
 			{
 				ret = DokanNtStatusFromWin32(::GetLastError());
@@ -650,12 +662,12 @@ private:
 				// in this case, FindFirstFile can't get directory information
 				if (wcscmp(fileName, L"\\") == 0)
 				{
-					handleFileInfo->dwFileAttributes = ::GetFileAttributes(&cachePath[0]);
+					handleFileInfo->dwFileAttributes = ::GetFileAttributes(&openFileInfo->CacheFilePath[0]);
 				}
 				else
 				{
 					WIN32_FIND_DATAW find = { 0 };
-					HANDLE findHandle = ::FindFirstFile(&cachePath[0], &find);
+					HANDLE findHandle = ::FindFirstFile(&openFileInfo->CacheFilePath[0], &find);
 					if (findHandle == INVALID_HANDLE_VALUE)
 					{
             DWORD error = ::GetLastError();
@@ -680,6 +692,8 @@ private:
 		{
 			::CloseHandle(tempHandle);
 		}
+
+    CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanGetFileInformation(openFileInfo->CacheFilePath, fileName, ret)));
 
 		return ret;
 	}
@@ -709,7 +723,7 @@ private:
 		UNREFERENCED_PARAMETER(dokanFileInfo);
 
 		// TODO Implement this correctly
-		*FreeBytesAvailable = static_cast<ULONGLONG>(512 * 1024 * 1024);
+		*FreeBytesAvailable = static_cast<ULONGLONG>(1024 * 1024 * 1024);
 		*TotalNumberOfBytes = 9223372036854775807;
 		*TotalNumberOfFreeBytes = 9223372036854775807;
 
@@ -724,7 +738,7 @@ private:
 		UNREFERENCED_PARAMETER(dokanFileInfo);
 		
 		wcscpy_s(VolumeNameBuffer, VolumeNameSize, L"SiaDrive");
-		*VolumeSerialNumber = 0x19831116;
+		*VolumeSerialNumber = 0x19831186;
 		*MaximumComponentLength = 256;
 		*FileSystemFlags = FILE_CASE_SENSITIVE_SEARCH | FILE_CASE_PRESERVED_NAMES |
 			FILE_SUPPORTS_REMOTE_STORAGE | FILE_UNICODE_ON_DISK |
@@ -846,7 +860,7 @@ private:
 			// Paging IO cannot write after allocate file size.
 			if (dokanFileInfo->PagingIo) 
 			{
-				if (static_cast<UINT64>(offset) >= li.QuadPart) 
+				if (offset >= li.QuadPart) 
 				{
 					*bytesWritten = 0;
 					if (opened)
@@ -854,7 +868,7 @@ private:
 					return STATUS_SUCCESS;
 				}
 
-				if (static_cast<UINT64>(offset + bytesToWrite) > li.QuadPart) 
+				if ((offset + bytesToWrite) > li.QuadPart) 
 				{
 					UINT64 bytes = li.QuadPart - offset;
 					if (bytes >> 32) 
@@ -868,7 +882,7 @@ private:
 				}
 			}
 
-			if (static_cast<UINT64>(offset) > li.QuadPart) 
+			if (offset > li.QuadPart) 
 			{
 				// In the mirror sample helperZeroFileData is not necessary. NTFS will
 				// zero a hole.
@@ -965,30 +979,30 @@ private:
 			dokanFileInfo->Context = 0;
 		}
 
-		if (dokanFileInfo->DeleteOnClose) 
-		{
-			// Should already be deleted by CloseHandle
-			// if open with FILE_FLAG_DELETE_ON_CLOSE
-			if (dokanFileInfo->IsDirectory) 
-			{
-				if (filePath.RemoveDirectory()) 
-				{
-				}
-				else 
-				{
-				}
-			}
-			else 
-			{
-				if (filePath.DeleteFile()) 
-				{
-				}
-				else 
-				{
-				}
-			}
+    if (dokanFileInfo->DeleteOnClose)
+    {
+      // Should already be deleted by CloseHandle
+      // if open with FILE_FLAG_DELETE_ON_CLOSE
+      if (dokanFileInfo->IsDirectory)
+      {
+        if (RetryableAction(filePath.RemoveDirectory(), DEFAULT_RETRY_COUNT, DEFAULT_RETRY_DELAY_MS))
+        {
+        }
+        else
+        {
+        }
+      }
+      else
+      {
+        if (RetryableAction(filePath.RemoveDirectory(), DEFAULT_RETRY_COUNT, DEFAULT_RETRY_DELAY_MS))
+        {
+        }
+        else
+        {
+        }
+      }
       RefreshActiveFileTree(true);
-		}
+    }
 	}
 
 	static NTSTATUS DOKAN_CALLBACK Sia_FlushFileBuffers(LPCWSTR fileName, PDOKAN_FILE_INFO dokanFileInfo) 
@@ -1040,11 +1054,13 @@ private:
           }
         } 
         while ((ret == STATUS_SUCCESS) && (::FindNextFile(findHandle, &findData) != 0));
-        
-        DWORD error = GetLastError();
-        if (error != ERROR_NO_MORE_FILES)
+        if (ret != STATUS_DIRECTORY_NOT_EMPTY)
         {
-          ret = DokanNtStatusFromWin32(error);
+          DWORD error = GetLastError();
+          if (error != ERROR_NO_MORE_FILES)
+          {
+            ret = DokanNtStatusFromWin32(error);
+          }
         }
         
         ::FindClose(findHandle);
@@ -1321,6 +1337,9 @@ public:
 		_dokanOptions.ThreadCount = 0; // use default
 #ifdef _DEBUG
 		_dokanOptions.Options = DOKAN_OPTION_DEBUG | DOKAN_OPTION_DEBUG_LOG_FILE;
+    _dokanOptions.Timeout = (60 * 1000) * 60;
+#else
+    _dokanOptions.Options = 0;
 #endif
 	}
 

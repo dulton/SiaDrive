@@ -66,8 +66,8 @@ public:
 	static SString UploadStatusToString(const _UploadStatus& uploadStatus);
 
 public:
-	_UploadStatus GetUploadStatus(const SString& siaPath);
   CSiaError<_UploadErrorCode> AddOrUpdate(const SString& siaPath, SString filePath);
+	_UploadStatus GetUploadStatus(const SString& siaPath);
   CSiaError<_UploadErrorCode> Remove(const SString& siaPath);
 };
 

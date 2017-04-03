@@ -196,11 +196,12 @@ class SIADRIVE_DOKAN_EXPORTABLE DokanFindFiles :
   public CEvent
 {
 public:
-  DokanFindFiles(const SString& cachePath, const SString& rootPath, const SString& siaQuery, const SString& findFile) :
+  DokanFindFiles(const SString& cachePath, const SString& rootPath, const SString& siaQuery, const SString& findFile, const SString& fileName) :
     _cachePath(cachePath),
     _rootPath(rootPath),
     _siaQuery(siaQuery),
-    _findFile(findFile)
+    _findFile(findFile),
+    _fileName(fileName)
   {
   }
 
@@ -214,11 +215,12 @@ private:
   const SString _rootPath;
   const SString _siaQuery;
   const SString _findFile;
+  const SString _fileName;
 
 public:
   virtual std::shared_ptr<CEvent> Clone() const override
   {
-    return std::shared_ptr<CEvent>(new DokanFindFiles(_cachePath, _rootPath, _siaQuery, _findFile));
+    return std::shared_ptr<CEvent>(new DokanFindFiles(_cachePath, _rootPath, _siaQuery, _findFile, _fileName));
   }
 
   virtual SString GetSingleLineMessage() const override
@@ -226,7 +228,8 @@ public:
     return L"DokanFindFiles|PATH|" + _cachePath +
       "|ROOT|" + _rootPath +
       "|QUERY|" + _siaQuery +
-      "|FIND|" + _findFile;
+      "|FIND|" + _findFile +
+      "|FN|" + _fileName;
   }
 };
 
@@ -265,8 +268,10 @@ class SIADRIVE_DOKAN_EXPORTABLE DokanGetFileInformation :
   public CEvent
 {
 public:
-  DokanGetFileInformation(const SString& cachePath) :
-    _cachePath(cachePath)
+  DokanGetFileInformation(const SString& cachePath, const SString& fileName, const NTSTATUS& result) :
+    _cachePath(cachePath),
+    _fileName(fileName),
+    _result(result)
   {
   }
 
@@ -277,16 +282,18 @@ public:
 
 private:
   const SString _cachePath;
+  const SString _fileName;
+  const NTSTATUS _result;
 
 public:
   virtual std::shared_ptr<CEvent> Clone() const override
   {
-    return std::shared_ptr<CEvent>(new DokanGetFileInformation(_cachePath));
+    return std::shared_ptr<CEvent>(new DokanGetFileInformation(_cachePath, _fileName, _result));
   }
 
   virtual SString GetSingleLineMessage() const override
   {
-    return L"DokanGetFileInformation|PATH|" + _cachePath;
+    return L"DokanGetFileInformation|PATH|" + _cachePath + "|FN|" + _fileName + "|RES|" + SString::FromUInt32(_result);
   }
 };
 
