@@ -31,6 +31,7 @@ protected:
 	virtual void AutoThreadCallback(const CSiaCurl& siaCurl, CSiaDriveConfig* siaDriveConfig);
 
 public:
+  bool IsRunning() const;
 	SiaHostConfig GetHostConfig() const;
 	void StartAutoThread();
 	void StopAutoThread();

@@ -67,3 +67,9 @@ void CAutoThread::StopAutoThread()
 		_thread.reset(nullptr);
 	}
 }
+
+
+bool CAutoThread::IsRunning() const
+{
+  return (_thread != nullptr);
+}
