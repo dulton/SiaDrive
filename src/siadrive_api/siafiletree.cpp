@@ -16,46 +16,51 @@ CSiaApi::_CSiaFileTree::~_CSiaFileTree()
 
 void CSiaApi::_CSiaFileTree::BuildTree(const json& result)
 {
-	_fileList.clear();
+  CSiaFileCollectionPtr fileList(new CSiaFileCollection());
 	for (const auto& file : result["files"])
 	{
-		_fileList.push_back(CSiaFilePtr(new CSiaFile(GetSiaCurl(), &GetSiaDriveConfig(), file)));
+		fileList->push_back(CSiaFilePtr(new CSiaFile(GetSiaCurl(), &GetSiaDriveConfig(), file)));
 	}
+
+  _fileList = fileList;
 }
 
 bool CSiaApi::_CSiaFileTree::FileExists(const SString& siaPath) const
 {
-	auto result = std::find_if(_fileList.begin(), _fileList.end(), [&](const CSiaFilePtr& item)->bool
+  auto fileList = GetFileList();
+	auto result = std::find_if(fileList->begin(), fileList->end(), [&](const CSiaFilePtr& item)->bool
 	{
 		return (item->GetSiaPath() == siaPath);
 	});
 
-	return (result != _fileList.end());
+	return (result != fileList->end());
 }
 
-CSiaFileCollection CSiaApi::_CSiaFileTree::GetFileList() const
+CSiaFileCollectionPtr CSiaApi::_CSiaFileTree::GetFileList() const
 {
 	return _fileList;
 }
 
 CSiaFilePtr CSiaApi::_CSiaFileTree::GetFile(const SString& siaPath) const
 {
-	auto result = std::find_if(_fileList.begin(), _fileList.end(), [&](const CSiaFilePtr& item)->bool
+  auto fileList = GetFileList();
+	auto result = std::find_if(fileList->begin(), fileList->end(), [&](const CSiaFilePtr& item)->bool
 	{
 		return (item->GetSiaPath() == siaPath);
 	});
 	
-	return ((result != _fileList.end()) ? *result : nullptr);
+	return ((result != fileList->end()) ? *result : nullptr);
 }
 
 CSiaFileCollection CSiaApi::_CSiaFileTree::Query(SString query) const
 {
+  auto fileList = GetFileList();
 	query = CSiaApi::FormatToSiaPath(query);
 	query.Replace(".", "\\.").Replace("*", "[^/]+").Replace("?", "[^/]?");
 	std::wregex r(query.str());
 
 	CSiaFileCollection ret;
-	std::copy_if(_fileList.begin(), _fileList.end(), std::back_inserter(ret), [&](const CSiaFilePtr& v) -> bool
+	std::copy_if(fileList->begin(), fileList->end(), std::back_inserter(ret), [&](const CSiaFilePtr& v) -> bool
 	{
 		return std::regex_match(v->GetSiaPath().str(), r);
 	});
@@ -65,6 +70,7 @@ CSiaFileCollection CSiaApi::_CSiaFileTree::Query(SString query) const
 
 std::vector<SString> CSiaApi::_CSiaFileTree::QueryDirectories(SString rootFolder) const
 {
+  auto fileList = GetFileList();
 	CSiaFileCollection col;
 	rootFolder.Replace("/", "\\");
 	if (rootFolder[0] == '\\')
@@ -73,7 +79,7 @@ std::vector<SString> CSiaApi::_CSiaFileTree::QueryDirectories(SString rootFolder
 	}
 
 	std::vector<SString> ret;
-	std::for_each(_fileList.begin(), _fileList.end(), [&](const CSiaFilePtr& v)
+	std::for_each(fileList->begin(), fileList->end(), [&](const CSiaFilePtr& v)
 	{
 		SString dir = v->GetSiaPath();
 		dir.Replace("/", "\\");

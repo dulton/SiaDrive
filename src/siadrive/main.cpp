@@ -21,9 +21,10 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
   UNREFERENCED_PARAMETER(lpCmdLine);
 #ifdef _DEBUG
   CDebugConsumer debugConsumer;
+  CLoggingConsumer loggingConsumer(EventLevel::Debug);
+#else
+  CLoggingConsumer loggingConsumer(EventLevel::Release);
 #endif
-  CLoggingConsumer loggingConsumer;
-
   CEventSystem::EventSystem.Start();
   CefEnableHighDPISupport();
 

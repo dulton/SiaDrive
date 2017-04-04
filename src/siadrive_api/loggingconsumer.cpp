@@ -4,7 +4,8 @@
 
 using namespace Sia::Api;
 
-CLoggingConsumer::CLoggingConsumer()
+CLoggingConsumer::CLoggingConsumer(const EventLevel& eventLevel) :
+  _EventLevel(eventLevel)
 {
 	CEventSystem::EventSystem.AddEventConsumer([=](const CEvent& event) {this->ProcessEvent(event); });
 }
@@ -21,10 +22,14 @@ void CLoggingConsumer::ProcessEvent(const CEvent& eventData)
   logPath.MakeAbsolute();
   FilePath(logPath).RemoveFileName().CreateDirectory();
 
+  std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+  std::stringstream ss;
+	ss << std::put_time(std::localtime(&now), "%F %T ");
+
   FILE* logFile;
-	if (fopen_s(&logFile, SString::ToUtf8(static_cast<SString>(logPath)).c_str(), "a") == 0)
+	if (fopen_s(&logFile, SString::ToUtf8(static_cast<SString>(logPath)).c_str(), "a+") == 0)
 	{
-    fprintf_s(logFile, SString::ToUtf8(eventData.GetSingleLineMessage() + "\n").c_str());
+    fprintf_s(logFile, SString::ToUtf8(ss.str() + eventData.GetSingleLineMessage() + "\n").c_str());
     fclose(logFile);
 	}
 }

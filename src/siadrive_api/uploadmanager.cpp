@@ -176,13 +176,13 @@ void CUploadManager::AutoThreadCallback(const CSiaCurl& siaCurl, CSiaDriveConfig
 				UploadStatus uploadStatus = static_cast<UploadStatus>(query.getColumn(query.getColumnIndex("status")).getUInt());
 
 				auto fileList = fileTree->GetFileList();
-				auto it = std::find_if(fileList.begin(), fileList.end(), [&](const CSiaFilePtr& ptr)
+				auto it = std::find_if(fileList->begin(), fileList->end(), [&](const CSiaFilePtr& ptr)
 				{
 					return ptr->GetSiaPath() == siaPath;
 				});
 				
 				// Removed by another client
-        if (it == fileList.end())
+        if (it == fileList->end())
         {
           HandleFileRemove(siaCurl, siaPath);
         }

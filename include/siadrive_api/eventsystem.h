@@ -5,12 +5,27 @@
 NS_BEGIN(Sia)
 NS_BEGIN(Api)
 
+enum class EventLevel
+{
+  Error,
+  Normal,
+  Debug
+};
+
 class SIADRIVE_EXPORTABLE CEvent
 {
 public:
+  CEvent(const EventLevel& eventLevel = EventLevel::Normal) :
+    _eventLevel(eventLevel)
+  {}
+
 	virtual ~CEvent() {}
 
+private:
+  const EventLevel _eventLevel;
+
 public:
+  const EventLevel& GetEventLevel() const { return _eventLevel; }
 	virtual SString GetSingleLineMessage() const = 0;
 	virtual std::shared_ptr<CEvent> Clone() const = 0;
 };

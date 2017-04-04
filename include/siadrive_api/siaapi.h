@@ -96,12 +96,12 @@ public:
 		virtual ~_CSiaFileTree();
 
 	private:
-		std::vector<std::shared_ptr<_CSiaFile>> _fileList;
+		std::shared_ptr<std::vector<std::shared_ptr<_CSiaFile>>> _fileList;
 
 	public:
 		void BuildTree(const json& result);
 
-		std::vector<std::shared_ptr<_CSiaFile>> GetFileList() const;
+		std::shared_ptr<std::vector<std::shared_ptr<_CSiaFile>>> GetFileList() const;
 
 		std::vector<std::shared_ptr<_CSiaFile>> Query(SString query) const;
 
@@ -247,6 +247,7 @@ typedef std::shared_ptr<CSiaConsensus> CSiaConsensusPtr;
 typedef CSiaApi::_CSiaFile CSiaFile;
 typedef std::shared_ptr<CSiaFile> CSiaFilePtr;
 typedef std::vector<CSiaFilePtr> CSiaFileCollection;
+typedef std::shared_ptr<CSiaFileCollection> CSiaFileCollectionPtr;
 typedef CSiaApi::_CSiaFileTree CSiaFileTree;
 typedef std::shared_ptr<CSiaFileTree> CSiaFileTreePtr;
 NS_END(2)

@@ -93,17 +93,17 @@ void CSiaApi::_CSiaRenter::Refresh(const CSiaCurl& siaCurl, CSiaDriveConfig* sia
       GetFileTree(fileTree);
 
 			auto fileList = fileTree->GetFileList();
-			if (fileList.size())
+			if (fileList->size())
 			{
-				std::uint64_t total = std::accumulate(std::next(fileList.begin()), fileList.end(), fileList[0]->GetFileSize(), [](const std::uint64_t& sz, const CSiaFilePtr& file)
+				std::uint64_t total = std::accumulate(std::next(fileList->begin()), fileList->end(), fileList->at(0)->GetFileSize(), [](const std::uint64_t& sz, const CSiaFilePtr& file)
 				{
 					return sz + file->GetFileSize();
 				});
 
-				std::uint32_t totalProgress = std::accumulate(std::next(fileList.begin()), fileList.end(), fileList[0]->GetUploadProgress(), [](const std::uint32_t& progress, const CSiaFilePtr& file)
+				std::uint32_t totalProgress = std::accumulate(std::next(fileList->begin()), fileList->end(), fileList->at(0)->GetUploadProgress(), [](const std::uint32_t& progress, const CSiaFilePtr& file)
 				{
 					return progress + min(100, file->GetUploadProgress());
-				}) / static_cast<std::uint32_t>(fileList.size());
+				}) / static_cast<std::uint32_t>(fileList->size());
 
 				SetTotalUsedBytes(total);
 				SetTotalUploadProgress(totalProgress);

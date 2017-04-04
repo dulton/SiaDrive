@@ -58,7 +58,6 @@ private:
 
   inline static CSiaFileTreePtr GetFileTree()
 	{
-    std::lock_guard<std::mutex> l(_fileTreeMutex);
     auto ret = _siaFileTree;
     return ret;
 	}
@@ -120,7 +119,7 @@ private:
 
   static void HandleSiaFileClose(const OpenFileInfo& openFileInfo, const std::uint64_t& fileSize, const bool& deleteOnClose)
   {
-      CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanCloseFile(openFileInfo.CacheFilePath)));
+      //CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanCloseFile(openFileInfo.CacheFilePath)));
       if (deleteOnClose)
       {
         // TODO Handle failure
@@ -466,7 +465,10 @@ private:
 				}
 			}
 		  
-		  CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanCreateFile(cacheFilePath, fileAttributesAndFlags, creationDisposition, genericDesiredAccess, ret)));
+      if (ret != STATUS_SUCCESS)
+      {
+        CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanCreateFile(cacheFilePath, fileAttributesAndFlags, creationDisposition, genericDesiredAccess, ret)));
+      }
 		}
 
 		return ret;
@@ -666,7 +668,7 @@ private:
 				}
 				else
 				{
-					WIN32_FIND_DATAW find = { 0 };
+					WIN32_FIND_DATA find = { 0 };
 					HANDLE findHandle = ::FindFirstFile(&openFileInfo->CacheFilePath[0], &find);
 					if (findHandle == INVALID_HANDLE_VALUE)
 					{
@@ -688,12 +690,15 @@ private:
 			}
 		}
 
-		if (opened)
-		{
-			::CloseHandle(tempHandle);
-		}
+    if (opened)
+    {
+      ::CloseHandle(tempHandle);
+    }
 
-    CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanGetFileInformation(openFileInfo->CacheFilePath, fileName, ret)));
+    if (ret != STATUS_SUCCESS)
+    {
+      CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanGetFileInformation(openFileInfo->CacheFilePath, fileName, ret)));
+    }
 
 		return ret;
 	}
@@ -760,7 +765,7 @@ private:
 		PDOKAN_FILE_INFO dokanFileInfo) 
 	{
 		FilePath filePath(GetCacheLocation(), fileName);
-    CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanReadFile(filePath)));
+    //CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanReadFile(filePath)));
     auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
 
     if (openFileInfo && openFileInfo->Dummy)
@@ -818,7 +823,7 @@ private:
 	{
     // TODO Check dummy and add to cache if not found
 		FilePath filePath(GetCacheLocation(), fileName);
-    CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanWriteFile(filePath)));
+    //CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanWriteFile(filePath)));
     auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
 
 		BOOL opened = FALSE;
@@ -928,7 +933,7 @@ private:
     // TODO Check dummy and add to cache if not found
 
     FilePath filePath(GetCacheLocation(), fileName);
-    CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanSetEndOfFile(filePath)));
+    //CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanSetEndOfFile(filePath)));
 
     auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
 		if (!openFileInfo || !openFileInfo->FileHandle || (openFileInfo->FileHandle == INVALID_HANDLE_VALUE))
@@ -985,7 +990,7 @@ private:
       // if open with FILE_FLAG_DELETE_ON_CLOSE
       if (dokanFileInfo->IsDirectory)
       {
-        if (RetryableAction(filePath.RemoveDirectory(), DEFAULT_RETRY_COUNT, DEFAULT_RETRY_DELAY_MS))
+        if (filePath.RemoveDirectory())
         {
         }
         else
@@ -994,7 +999,7 @@ private:
       }
       else
       {
-        if (RetryableAction(filePath.RemoveDirectory(), DEFAULT_RETRY_COUNT, DEFAULT_RETRY_DELAY_MS))
+        if (filePath.DeleteFile())
         {
         }
         else
@@ -1008,7 +1013,7 @@ private:
 	static NTSTATUS DOKAN_CALLBACK Sia_FlushFileBuffers(LPCWSTR fileName, PDOKAN_FILE_INFO dokanFileInfo) 
 	{
     FilePath filePath(GetCacheLocation(), fileName);
-    CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanFlushFileBuffers(filePath)));
+    //CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanFlushFileBuffers(filePath)));
 
     auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
 		if (!openFileInfo || !openFileInfo->FileHandle || (openFileInfo->FileHandle == INVALID_HANDLE_VALUE))
@@ -1030,14 +1035,14 @@ private:
   static NTSTATUS DOKAN_CALLBACK Sia_DeleteDirectory(LPCWSTR fileName, PDOKAN_FILE_INFO dokanFileInfo) 
   {
     FilePath filePath = FilePath(GetCacheLocation(), fileName);
-    CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanDeleteDirectory(filePath)));
+    //CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanDeleteDirectory(filePath)));
 
     NTSTATUS ret = STATUS_SUCCESS;
     if (dokanFileInfo->DeleteOnClose)
     {
       filePath.Append("*");
 
-      WIN32_FIND_DATAW findData;
+      WIN32_FIND_DATA findData;
       HANDLE findHandle = ::FindFirstFile(&filePath[0], &findData);
       if (findHandle == INVALID_HANDLE_VALUE)
       {
@@ -1077,7 +1082,7 @@ private:
 
     auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
     FilePath filePath(GetCacheLocation(), fileName);
-    CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanDeleteFileW(filePath)));
+    //CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanDeleteFileW(filePath)));
 
     DWORD dwAttrib = ::GetFileAttributes(&filePath[0]);
     if ((dwAttrib != INVALID_FILE_ATTRIBUTES) && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY))
@@ -1104,7 +1109,7 @@ private:
 
     FilePath filePath(GetCacheLocation(), fileName);
     FilePath newFilePath(GetCacheLocation(), NewFileName);
-    CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanMoveFileW(filePath, newFilePath)));
+    //CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanMoveFileW(filePath, newFilePath)));
 
     auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
     if (!openFileInfo || !openFileInfo->FileHandle || (openFileInfo->FileHandle == INVALID_HANDLE_VALUE))
@@ -1151,7 +1156,7 @@ private:
     NTSTATUS ret = STATUS_SUCCESS;
 
     FilePath filePath(GetCacheLocation(), fileName);
-    CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanSetFileAttributesW(filePath)));
+    //CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanSetFileAttributesW(filePath)));
 
     if (!::SetFileAttributes(&filePath[0], fileAttributes)) 
     {
@@ -1169,7 +1174,7 @@ private:
   {
     UNREFERENCED_PARAMETER(dokanFileInfo);
     FilePath filePath(GetCacheLocation(), fileName);
-    CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanGetFileAttributesW(filePath)));
+    //CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanGetFileAttributesW(filePath)));
     SECURITY_INFORMATION requestingSaclInfo = ((*securityInfo & SACL_SECURITY_INFORMATION) || (*securityInfo & BACKUP_SECURITY_INFORMATION));
 
     //if (!g_HasSeSecurityPrivilege) {
@@ -1220,7 +1225,7 @@ private:
     UNREFERENCED_PARAMETER(securityDescriptorLength);
 
     FilePath filePath(GetCacheLocation(), fileName);
-    CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanSetFileSecurityW(filePath)));
+    //CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanSetFileSecurityW(filePath)));
 
     auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
     if (!openFileInfo || !openFileInfo->FileHandle || (openFileInfo->FileHandle == INVALID_HANDLE_VALUE))
@@ -1242,7 +1247,7 @@ private:
       PDOKAN_FILE_INFO dokanFileInfo) 
   {
     FilePath filePath(GetCacheLocation(), fileName);
-    CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanSetFileTime(filePath)));
+    //CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanSetFileTime(filePath)));
 
     auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
     if (!openFileInfo || !openFileInfo->FileHandle || (openFileInfo->FileHandle == INVALID_HANDLE_VALUE))
@@ -1264,7 +1269,7 @@ private:
     // TODO Check dummy and add to cache if not found
     NTSTATUS ret = STATUS_SUCCESS;
     FilePath filePath(GetCacheLocation(), fileName);
-    CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanSetAllocationSize(filePath)));
+    //CEventSystem::EventSystem.NotifyEvent(CreateSystemEvent(DokanSetAllocationSize(filePath)));
 
     auto openFileInfo = reinterpret_cast<OpenFileInfo*>(dokanFileInfo->Context);
     if (!openFileInfo || !openFileInfo->FileHandle || (openFileInfo->FileHandle == INVALID_HANDLE_VALUE))
