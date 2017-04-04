@@ -10,3 +10,4 @@ Core
 -----
 1. Available/used space reported to windows is not implemented properly and will display only 512MB free
 2. Debug build will crash on app exit
+3. Folder detection is hosed - will not see all folders
